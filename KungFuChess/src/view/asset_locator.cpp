@@ -1,7 +1,7 @@
 #include "view/asset_locator.hpp"
 
 std::string AssetLocator::getPiecePrefix(PieceKind kind, PieceColor color) {
-    std::string prefix = "";
+   std::string prefix = "";
     switch (kind) {
         case PieceKind::Pawn:   prefix = "P"; break;
         case PieceKind::Knight: prefix = "N"; break;

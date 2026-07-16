@@ -39,7 +39,6 @@ void AnimationData::loadConfig(const std::string& configPath) {
         }
     }
     
-    // התיקון הארכיטקטוני: חישוב מראש של המהירות כדי למנוע חלוקה בכל פריים במשחק
     msPerFrame = 1000 / (framesPerSec > 0 ? framesPerSec : 1);
 }
 

@@ -10,7 +10,6 @@ Renderer::Renderer(int winWidth, int winHeight,
     : layout(winWidth, winHeight, logicalRows, logicalCols, marginLeft, marginTop, marginRight, marginBottom),
       assetsBasePath(assetsPath) {
     
-    // פקודה אחת שטוענת את כל הזיכרון בתחילת המשחק!
     assets.loadAllAssets(assetsBasePath, layout.getCellSize());
 }
 
