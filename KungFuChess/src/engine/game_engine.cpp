@@ -206,10 +206,14 @@ void GameEngine::processArrivals(const std::vector<Motion>& arrivals) {
 
         ruleEngine.processArrival(currentState.board, landingPiece);
 
+        notifyMoveCompleted(landingPiece, motion.source, motion.destination, currentTime);
+
         auto targetCellPiece = currentState.board.getPiece(landingPiece.cell);
         if (targetCellPiece.has_value()) {
             currentState.board.removePiece(landingPiece.cell);
             
+            notifyPieceCaptured(targetCellPiece.value());
+
             // generic end-of-game check
             if (ruleEngine.isFatalDeath(targetCellPiece->kind)) {
                 currentState.isGameOver = true;
@@ -284,5 +288,18 @@ void GameEngine::setupStandardBoard() {
     for (int col = 0; col < 8; ++col) {
         currentState.board.addPiece(Piece(currentId++, PieceColor::Black, backRank[col], Position{0, col}));
         currentState.board.addPiece(Piece(currentId++, PieceColor::White, backRank[col], Position{7, col}));
+    }
+}
+
+void GameEngine::notifyMoveCompleted(const Piece& piece, Position source, Position dest, long timeMs) {
+    // עוברים על כל המאזינים שנרשמו, ומעדכנים אותם!
+    for (auto* observer : observers) {
+        observer->onMoveCompleted(piece, source, dest, timeMs);
+    }
+}
+
+void GameEngine::notifyPieceCaptured(const Piece& capturedPiece) {
+    for (auto* observer : observers) {
+        observer->onPieceCaptured(capturedPiece);
     }
 }

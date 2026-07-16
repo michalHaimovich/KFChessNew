@@ -46,6 +46,11 @@ private:
 
     void resolvePhysicsTick();
 
+    std::vector<GameObserver*> observers;
+    
+    void notifyMoveCompleted(const Piece& piece, Position source, Position dest, long timeMs);
+    void notifyPieceCaptured(const Piece& capturedPiece);
+
 public:
     // Initializes the internal game state.
     GameEngine(int width, int height);
@@ -66,4 +71,9 @@ public:
 
     // Creates a read-only snapshot for the view layer.
     GameSnapshot getSnapshot() const;
+
+    void addObserver(GameObserver* observer) {
+        observers.push_back(observer);
+    }
+    
 };
