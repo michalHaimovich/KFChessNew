@@ -149,6 +149,9 @@ void GameEngine::resolvePhysicsTick() {
 
                     if (jumper.piece.color != walker.piece.color) {
                         walker.isDead = true; // destroyed in air
+
+                        notifyPieceCaptured(walker.piece);
+
                     } else if (walker.piece.kind != PieceKind::Knight) {
                         walker.arrivalTime = now; 
                         walker.destination = walker.getCurrentCell(now - 50);
@@ -164,11 +167,25 @@ void GameEngine::resolvePhysicsTick() {
                     
                     if (m1.startTime < m2.startTime) {
                         m2.isDead = true; 
+
+                        notifyPieceCaptured(m2.piece);
+
+                        if (ruleEngine.isFatalDeath(m2.piece.kind)) currentState.isGameOver = true;
+
                     } else if (m2.startTime < m1.startTime) {
                         m1.isDead = true;
+
+                        notifyPieceCaptured(m1.piece);
+
+                        if (ruleEngine.isFatalDeath(m1.piece.kind)) currentState.isGameOver = true;
                     } else {
                         m1.isDead = true;
                         m2.isDead = true;
+                        notifyPieceCaptured(m1.piece); 
+                        notifyPieceCaptured(m2.piece);
+                        if (ruleEngine.isFatalDeath(m1.piece.kind) || ruleEngine.isFatalDeath(m2.piece.kind)) {
+                            currentState.isGameOver = true;
+                        }
                     }
                 } else {
                     if (isM1Knight || isM2Knight) {
@@ -215,6 +232,11 @@ void GameEngine::processArrivals(const std::vector<Motion>& arrivals) {
             
             // Prevent friendly fire - landing piece is discarded, friend survives
             if (targetCellPiece->color == landingPiece.color) {
+                int dr = (motion.destination.row > motion.source.row) ? 1 : (motion.destination.row < motion.source.row) ? -1 : 0;
+                int dc = (motion.destination.col > motion.source.col) ? 1 : (motion.destination.col < motion.source.col) ? -1 : 0;
+                
+                landingPiece.cell = Position{motion.destination.row - dr, motion.destination.col - dc};
+                currentState.board.addPiece(landingPiece);
                 continue; 
             }
 
