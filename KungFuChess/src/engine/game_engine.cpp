@@ -3,10 +3,11 @@
 GameEngine::GameEngine(int width, int height) : currentState(width, height) {} 
 
 GameState& GameEngine::getGameState() {
-    return currentState;}
+    return currentState;
+}
 
 bool GameEngine::requestMove(Position source, Position destination, long durationMs) {
-    // 1. Application-level guard: Game Over , cooldown
+    // 1. Application-level guard: Game Over, cooldown
     if (currentState.isGameOver) return false;
 
     auto pieceOpt = currentState.board.getPiece(source);
@@ -85,7 +86,6 @@ void GameEngine::wait(long ms) {
 }
 
 void GameEngine::resolvePhysicsTick() {
-
     auto& motions = arbiter.getActiveMotionsRef();
     long now = arbiter.getCurrentTime();
 
@@ -103,6 +103,10 @@ void GameEngine::resolvePhysicsTick() {
                 Piece stationaryPiece = stationaryOpt.value();
                 
                 if (stationaryPiece.color != motions[i].piece.color) {
+                    
+                    // Notify observers about the mid-air capture for the score manager
+                    notifyPieceCaptured(stationaryPiece);
+                    
                     currentState.board.removePiece(pos); 
                     
                     if (ruleEngine.isFatalDeath(stationaryPiece.kind)) {
@@ -168,9 +172,7 @@ void GameEngine::resolvePhysicsTick() {
                     }
                 } else {
                     if (isM1Knight || isM2Knight) {
-                        Motion& knight = isM1Knight ? m1 : m2;
-                        Motion& victim = isM1Knight ? m2 : m1;
-                        victim.isDead = true; // destroyed in air
+                        continue; 
                     } else {
                         if (m1.startTime < m2.startTime) {
                             m2.arrivalTime = now;
@@ -187,7 +189,6 @@ void GameEngine::resolvePhysicsTick() {
 }
 
 void GameEngine::processArrivals(const std::vector<Motion>& arrivals) {
-    
     long currentTime = arbiter.getCurrentTime();
 
     for (const auto& motion : arrivals) {
@@ -206,19 +207,30 @@ void GameEngine::processArrivals(const std::vector<Motion>& arrivals) {
 
         ruleEngine.processArrival(currentState.board, landingPiece);
 
-        notifyMoveCompleted(landingPiece, motion.source, motion.destination, currentTime);
+        // Track if a capture happens exactly at the destination
+        bool destinationCapture = false;
 
         auto targetCellPiece = currentState.board.getPiece(landingPiece.cell);
         if (targetCellPiece.has_value()) {
+            
+            // Prevent friendly fire - landing piece is discarded, friend survives
+            if (targetCellPiece->color == landingPiece.color) {
+                continue; 
+            }
+
+            notifyPieceCaptured(targetCellPiece.value());
+            destinationCapture = true;
+            
             currentState.board.removePiece(landingPiece.cell);
             
-            notifyPieceCaptured(targetCellPiece.value());
-
             // generic end-of-game check
             if (ruleEngine.isFatalDeath(targetCellPiece->kind)) {
                 currentState.isGameOver = true;
             }
         }
+
+        // Notify move completion with the precise destinationCapture flag
+        notifyMoveCompleted(landingPiece, motion.source, motion.destination, destinationCapture, currentTime);
 
         currentState.board.addPiece(landingPiece);
     }
@@ -291,10 +303,10 @@ void GameEngine::setupStandardBoard() {
     }
 }
 
-void GameEngine::notifyMoveCompleted(const Piece& piece, Position source, Position dest, long timeMs) {
-    // עוברים על כל המאזינים שנרשמו, ומעדכנים אותם!
+// Fixed missing class scope to prevent LNK errors
+void GameEngine::notifyMoveCompleted(const Piece& piece, Position source, Position dest, bool destinationCapture, long timeMs) {    
     for (auto* observer : observers) {
-        observer->onMoveCompleted(piece, source, dest, timeMs);
+        observer->onMoveCompleted(piece, source, dest, destinationCapture, timeMs);
     }
 }
 

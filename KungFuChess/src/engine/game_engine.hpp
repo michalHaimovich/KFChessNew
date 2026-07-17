@@ -48,7 +48,7 @@ private:
 
     std::vector<GameObserver*> observers;
     
-    void notifyMoveCompleted(const Piece& piece, Position source, Position dest, long timeMs);
+    void notifyMoveCompleted(const Piece& piece, Position source, Position dest, bool destinationCapture, long timeMs);    
     void notifyPieceCaptured(const Piece& capturedPiece);
 
 public:

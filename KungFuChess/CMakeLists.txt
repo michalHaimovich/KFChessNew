@@ -54,6 +54,10 @@ add_library(kungfu_chess_core
     src/view/asset_manager.cpp
     src/view/piece_view.cpp
     src/view/renderer.cpp
+    src/view/move_history_manager.cpp
+    src/view/score_manager.cpp
+
+    
 )
 
 # מקשר את הליבה שלנו לספריות של OpenCV כדי שנוכל להשתמש בפונקציות הגרפיות

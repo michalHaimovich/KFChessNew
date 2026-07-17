@@ -6,6 +6,8 @@
 #include "input/controller.hpp"
 #include "input/board_mapper.hpp"
 #include "view/renderer.hpp"
+#include "view/move_history_manager.hpp"
+#include "view/score_manager.hpp"
 
 // פונקציית ה-Callback של OpenCV שעוקבת אחרי העכבר
 void onMouse(int event, int x, int y, int flags, void *userdata)
@@ -42,7 +44,14 @@ int main()
 
         engine.setupStandardBoard();
 
-        Renderer renderer(1000, 700, 8, 8, 200, 120, 200, 20, "assets");
+        ScoreManager scoreManager;
+        MoveHistoryManager historyManager;
+
+        engine.addObserver(&scoreManager);
+        engine.addObserver(&historyManager);
+
+        // 4. יצירת ה-Renderer עם הגדרת שוליים של 260 פיקסלים בצדדים ו-100 למעלה ולמטה בשביל הטבלאות
+        Renderer renderer(1024, 720, 8, 8, 260, 100, 260, 100, "assets/", &scoreManager, &historyManager);
 
         BoardMapper mapper(renderer.getBoardStartX(),
                            renderer.getBoardStartY(),

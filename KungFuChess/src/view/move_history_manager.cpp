@@ -32,19 +32,16 @@ std::string MoveHistoryManager::getCoord(Position pos) const {
     return std::string(1, file) + std::string(1, rank);
 }
 
-void MoveHistoryManager::onPieceCaptured(const Piece& capturedPiece) {
-    pendingCapture = true; 
-}
+void MoveHistoryManager::onPieceCaptured(const Piece& capturedPiece) {}
 
-void MoveHistoryManager::onMoveCompleted(const Piece& piece, Position source, Position dest, long timeMs) {
+void MoveHistoryManager::onMoveCompleted(const Piece& piece, Position source, Position dest, bool destinationCapture, long timeMs) {
     std::string timeStr = formatTime(timeMs);
     std::string moveStr = getPieceChar(piece.kind) + getCoord(source);
 
-    if (pendingCapture) {
-        moveStr += " x " + getCoord(dest); 
-        pendingCapture = false;            
+    if (destinationCapture) {
+        moveStr += " x " + getCoord(dest);
     } else {
-        moveStr += " -> " + getCoord(dest); 
+        moveStr += " -> " + getCoord(dest);
     }
 
     if (piece.color == PieceColor::White) {

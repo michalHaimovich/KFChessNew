@@ -22,5 +22,5 @@ void ScoreManager::onPieceCaptured(const Piece& capturedPiece) {
     }
 }
 
-void ScoreManager::onMoveCompleted(const Piece& piece, Position source, Position dest, long timeMs) {
+void ScoreManager::onMoveCompleted(const Piece& piece, Position source, Position dest,  bool destinationCapture, long timeMs) {
 }
