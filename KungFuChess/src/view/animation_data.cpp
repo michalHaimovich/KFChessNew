@@ -12,7 +12,7 @@ AnimationData::AnimationData(const std::string& directoryPath, int targetSize)
 
 void AnimationData::loadConfig(const std::string& configPath) {
     std::ifstream file(configPath);
-    int framesPerSec = 6; // ברירת מחדל
+    int framesPerSec = 6;
     isLoop = true;
     
     if (file.is_open()) {

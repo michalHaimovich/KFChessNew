@@ -8,21 +8,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
 
-# --- הגדרת OpenCV מתוך התיקייה המקומית בפרויקט ---
-# אנחנו אומרים ל-CMake איפה נמצאים קבצי ה-Header (.hpp)
+# OpenCV include and library directories
 include_directories(src/OpenCV/include)
-
-# אנחנו אומרים ל-CMake איפה נמצאים קבצי ה-Binary (.dll או .lib)
-# בהנחה שהקבצים נמצאים ב-src/OpenCV/bin
 link_directories(src/OpenCV/bin)
-
-# בהמשך, כשנקשר את הספריות, נצטרך לציין את שמות הקבצים הספציפיים
-# (למשל: opencv_world460.lib - תלוי מה יש לך בתיקיית ה-bin)
 
 # Include directories
 include_directories(src)
-include_directories(tests) # doctest.h is located here
-include_directories(${OpenCV_INCLUDE_DIRS}) # חושף את הנתיבים של OpenCV לכל הפרויקט
+include_directories(tests)
+include_directories(${OpenCV_INCLUDE_DIRS})
 
 # ==========================================
 # 1. Core game library (KungFuChess Core)
@@ -60,7 +53,6 @@ add_library(kungfu_chess_core
     
 )
 
-# מקשר את הליבה שלנו לספריות של OpenCV כדי שנוכל להשתמש בפונקציות הגרפיות
 target_link_libraries(kungfu_chess_core PUBLIC ${OpenCV_LIBS})
 
 # ==========================================
@@ -90,8 +82,8 @@ add_executable(kungfu_chess_tests
 # Link the core library
 target_link_libraries(kungfu_chess_tests PRIVATE kungfu_chess_core)
 
-target_link_libraries(kungfu_chess_core PUBLIC 
-    opencv_world451d  # שנו את זה לשם הקובץ שיש לכם בתיקיית ה-bin (בלי סיומת .lib)
+target_link_libraries(kungfu_chess_core PUBLIC
+    opencv_world451d
 )
 # ==========================================
 # Optional: coverage settings (for VSCode coverage reporting)

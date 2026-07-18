@@ -6,7 +6,6 @@ class BoardMapper {
 private:
     int startX, startY, cellSize;
 public:
-    // בנאי שמקבל את המידות האמיתיות של הלוח כפי שחושבו ב-Layout
     BoardMapper(int x, int y, int size) : startX(x), startY(y), cellSize(size) {}
 
     std::optional<Position> pixelToCell(int x, int y) const {
