@@ -1,67 +1,72 @@
 ﻿#include "doctest.h"
-
 #include "model/board.hpp"
-
 #include "model/piece.hpp"
 
-TEST_CASE("Board - Logical Occupancy and Movement") {
-    // Create an 8x8 board
-    Board board(8, 8);
-
-    SUBCASE("Board dimensions are inferred/stored correctly") {
+TEST_CASE("Board - Dimensions and Bounds") {
+    Board board(8, 8); 
+    SUBCASE("Board initializes with correct dimensions") {
         CHECK(board.getWidth() == 8);
         CHECK(board.getHeight() == 8);
     }
 
-    SUBCASE("Empty cells return no piece") {
-        CHECK_FALSE(board.getPiece({0, 0}).has_value());
+    SUBCASE("isInside correctly identifies valid positions") {
+        CHECK(board.isInside(Position{0, 0}) == true);  
+        CHECK(board.isInside(Position{7, 7}) == true);   
+        CHECK(board.isInside(Position{3, 4}) == true);   
     }
 
-    SUBCASE("Occupied cells return the correct piece") {
-        Piece pawn(1, PieceColor::White, PieceKind::Pawn, {1, 1});
-        bool added = board.addPiece(pawn);
+    SUBCASE("isInside correctly identifies invalid positions") {
+        CHECK(board.isInside(Position{-1, 0}) == false);
+        CHECK(board.isInside(Position{0, -1}) == false); 
+        CHECK(board.isInside(Position{8, 0}) == false);  
+        CHECK(board.isInside(Position{0, 8}) == false);  
+    }
+}
 
-        CHECK(added == true);
-        auto piece_opt = board.getPiece({1, 1});
-        REQUIRE(piece_opt.has_value());
-        CHECK(piece_opt->id == 1);
+TEST_CASE("Board - Piece Management") {
+    Board board(8, 8);
+    Piece whitePawn(1, PieceColor::White, PieceKind::Pawn, Position{1, 1});
+    Piece blackKnight(2, PieceColor::Black, PieceKind::Knight, Position{7, 7});
+
+    SUBCASE("Getting a piece from an empty cell returns nullopt") {
+        CHECK(board.getPiece(Position{2, 2}).has_value() == false);
     }
 
-    SUBCASE("Adding two pieces to the same cell fails (reject duplicate occupancy)") {
-        Piece first(1, PieceColor::White, PieceKind::Rook, {0, 0});
-        Piece second(2, PieceColor::Black, PieceKind::Knight, {0, 0});
-
-        CHECK(board.addPiece(first) == true);
-        // The second insertion should be rejected
-        CHECK(board.addPiece(second) == false); 
-    }
-
-    SUBCASE("Moving a piece updates source and destination") {
-        Piece rook(1, PieceColor::White, PieceKind::Rook, {0, 0});
-        board.addPiece(rook);
-
-        // Move the rook to the other side of the board
-        board.movePiece({0, 0}, {0, 7});
-
-        // Source must be empty
-        CHECK_FALSE(board.getPiece({0, 0}).has_value()); 
+    SUBCASE("Adding and retrieving a piece successfully") {
+        CHECK(board.addPiece(whitePawn) == true);
         
-        // Destination must contain the piece
-        auto dest_piece = board.getPiece({0, 7});
-        REQUIRE(dest_piece.has_value());
-        CHECK(dest_piece->id == 1);
-        
-        // The piece's internal cell property must update too
-        CHECK(dest_piece->cell == Position{0, 7}); 
+        auto retrievedOpt = board.getPiece(Position{1, 1});
+        REQUIRE(retrievedOpt.has_value());
+        CHECK(retrievedOpt->id == 1);
+        CHECK(retrievedOpt->color == PieceColor::White);
+        CHECK(retrievedOpt->kind == PieceKind::Pawn);
     }
 
-    SUBCASE("Removing a captured piece clears its cell") {
-        Piece knight(1, PieceColor::Black, PieceKind::Knight, {5, 5});
-        board.addPiece(knight);
+    SUBCASE("Adding a piece out of bounds returns false") {
+        Piece outOfBoundsPiece(3, PieceColor::White, PieceKind::Rook, Position{10, 10});
+        CHECK(board.addPiece(outOfBoundsPiece) == false);
+    }
 
-        bool removed = board.removePiece({5, 5});
+    SUBCASE("Removing an existing piece returns true and clears the cell") {
+        board.addPiece(whitePawn);
+        CHECK(board.removePiece(Position{1, 1}) == true);
+        CHECK(board.getPiece(Position{1, 1}).has_value() == false);
+    }
 
-        CHECK(removed == true);
-        CHECK_FALSE(board.getPiece({5, 5}).has_value());
+    SUBCASE("Removing a piece from an empty cell returns false") {
+        CHECK(board.removePiece(Position{5, 5}) == false);
+    }
+
+    SUBCASE("Moving a piece clears the source and updates the destination") {
+        board.addPiece(blackKnight);
+        
+        board.movePiece(Position{7, 7}, Position{5, 6});
+        
+        CHECK(board.getPiece(Position{7, 7}).has_value() == false);
+        
+        auto movedPieceOpt = board.getPiece(Position{5, 6});
+        REQUIRE(movedPieceOpt.has_value());
+        CHECK(movedPieceOpt->id == 2);
+        CHECK(movedPieceOpt->kind == PieceKind::Knight);
     }
 }

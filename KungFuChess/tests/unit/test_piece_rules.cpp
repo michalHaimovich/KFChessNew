@@ -1,32 +1,36 @@
-﻿// #include "doctest.h"
-// #include "model/piece.hpp"
-// #include "model/position.hpp"
+﻿#include "doctest.h"
+#include "rules/piece_rules.hpp"
+#include "rules/balance_config.hpp" 
+#include "model/board.hpp"
 
-// TEST_CASE("Piece - Lifecycle and State") {
+TEST_CASE("PieceRules - Specific Behaviors") {
+    GameBalance balance; 
     
-//     // Create a White Rook at position (0, 0) with ID 1
-//     Piece rook(1, PieceColor::White, PieceKind::Rook, Position{0, 0});
+    SUBCASE("KingRule identifies death as fatal") {
+        KingRule kingRule(balance.king);
+        CHECK(kingRule.isFatalDeath() == true);
+    }
+    
+    SUBCASE("RookRule identifies death as non-fatal") {
+        RookRule rookRule(balance.rook);
+        CHECK(rookRule.isFatalDeath() == false); 
+    }
 
-//     SUBCASE("Piece initializes with correct attributes and Idle state") {
-//         CHECK(rook.id == 1);
-//         CHECK(rook.color == PieceColor::White);
-//         CHECK(rook.kind == PieceKind::Rook);
-//         CHECK(rook.cell == Position{0, 0});
+    SUBCASE("PawnRule handles promotion upon arrival at the last rank") {
+        PawnRule pawnRule(balance.pawn);
+        Board board(8, 8);
         
-//         // State should default to Idle
-//         CHECK(rook.state == PieceState::Idle);
-//     }
-
-//     SUBCASE("Piece state can transition to moving or captured without storing destination or time") {
-//         // Transition to moving
-//         rook.state = PieceState::Moving;
-//         CHECK(rook.state == PieceState::Moving);
-
-//         // Transition to captured
-//         rook.state = PieceState::Captured;
-//         CHECK(rook.state == PieceState::Captured);
+        Piece whitePawn(1, PieceColor::White, PieceKind::Pawn, Position{0, 4});
         
-//         // Verify other attributes remain completely unaffected by state changes
-//         CHECK(rook.cell == Position{0, 0});
-//     }
-// }
+        pawnRule.onArrival(board, whitePawn);
+        
+        CHECK(whitePawn.kind == PieceKind::Queen);
+    }
+
+    SUBCASE("PieceRule base class correctly maps states to cooldowns") {
+        RookRule rookRule(balance.rook);
+        
+        CHECK(rookRule.getCooldownMs(PieceState::Idle) == 0);
+        CHECK(rookRule.getCooldownMs(PieceState::Move) == 0);
+    }
+}

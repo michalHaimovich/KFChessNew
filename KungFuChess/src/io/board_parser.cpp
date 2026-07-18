@@ -2,6 +2,7 @@
 #include <sstream>
 #include <iostream>
 #include <cstdlib> // needed for std::exit
+#include <stdexcept>
 
 Board BoardParser::parse(const std::string& text) {
     std::istringstream stream(text);
@@ -26,15 +27,14 @@ Board BoardParser::parse(const std::string& text) {
     if (grid.empty()) return Board(0, 0);
 
     // ===============================================
-    // step 2: validation (checks that prevent test crashes)
+    // step 2: validation (throws exception instead of exit)
     // ===============================================
     
     // check A: are all rows the same width? (prevent out of bounds)
     size_t expectedWidth = grid[0].size();
     for (const auto& row : grid) {
         if (row.size() != expectedWidth) {
-            std::cout << "ERROR ROW_WIDTH_MISMATCH\n";
-            std::exit(0); 
+            throw std::invalid_argument("ERROR ROW_WIDTH_MISMATCH");
         }
     }
 
@@ -46,19 +46,16 @@ Board BoardParser::parse(const std::string& text) {
             if (token == ".") continue;
 
             if (token.length() != 2 || (token[0] != 'w' && token[0] != 'b')) {
-                std::cout << "ERROR UNKNOWN_TOKEN\n";
-                std::exit(0);
+                throw std::invalid_argument("ERROR UNKNOWN_TOKEN");
             }
 
             char kind = token[1];
             if (kind != 'K' && kind != 'Q' && kind != 'R' && 
                 kind != 'B' && kind != 'N' && kind != 'P') {
-                std::cout << "ERROR UNKNOWN_TOKEN\n";
-                std::exit(0);
+                throw std::invalid_argument("ERROR UNKNOWN_TOKEN");
             }
         }
     }
-
     // ===============================================
     // step 3: build the board only after validation
     // ===============================================
