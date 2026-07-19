@@ -1,3 +1,8 @@
 /build
 
-/src/OpenCV
+/src/client/OpenCV
+
+/third_party
+
+*.dll
+*.lib

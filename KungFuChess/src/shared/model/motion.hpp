@@ -1,6 +1,6 @@
 ﻿#pragma once
-#include "model/piece.hpp"
-#include "model/position.hpp"
+#include "piece.hpp"
+#include "position.hpp"
 #include <cmath>
 
 enum class MotionType { Normal, Jump };

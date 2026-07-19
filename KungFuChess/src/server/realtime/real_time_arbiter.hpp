@@ -1,6 +1,6 @@
 ﻿#pragma once
 #include <vector>
-#include "motion.hpp"
+#include "model/motion.hpp"
 
 class RealTimeArbiter {
 private:

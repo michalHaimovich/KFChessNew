@@ -10,7 +10,7 @@
 #include "view/piece_view.hpp"
 #include "view/img.hpp"
 #include "engine/game_engine.hpp" 
-#include "realtime/motion.hpp" 
+#include "model/motion.hpp" 
 
 #include "score_manager.hpp"
 #include "move_history_manager.hpp"

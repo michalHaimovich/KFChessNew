@@ -1,68 +1,98 @@
 ﻿cmake_minimum_required(VERSION 3.15)
 project(KungFuChess CXX)
-
+add_definitions(-DASIO_STANDALONE -D_WEBSOCKETPP_CPP11_STL_ -DASIO_ENABLE_OLD_SERVICES)
 
 # Use C++17 standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ==========================================
+# 0. Third-Party Libraries (WebSockets & ASIO)
+# ==========================================
+# מגדיר ל-CMake איפה לחפש את ספריות הרשת שהורדנו
+include_directories(${CMAKE_SOURCE_DIR}/third_party/asio/include)
+include_directories(${CMAKE_SOURCE_DIR}/third_party)
 
+# OpenCV include and library directories (Moved to Client)
+include_directories(src/client/OpenCV/include)
+link_directories(src/client/OpenCV/bin)
 
-# OpenCV include and library directories
-include_directories(src/OpenCV/include)
-link_directories(src/OpenCV/bin)
-
-# Include directories
-include_directories(src)
+# הוספת נתיבי התיקיות החדשות כדי ש-includes יעבדו בצורה חלקה
+include_directories(src/shared)
+include_directories(src/client)
+include_directories(src/server)
 include_directories(tests)
-include_directories(${OpenCV_INCLUDE_DIRS})
 
 # ==========================================
-# 1. Core game library (KungFuChess Core)
+# 1. Shared Library (Model & IO)
 # ==========================================
-add_library(kungfu_chess_core
-    # --- Model & Rules ---
-    src/model/position.cpp
-    src/model/board.cpp
-    src/rules/piece_rules.cpp
-    src/rules/rule_engine.cpp
-    
-    # --- Engine & Real-Time ---
-    src/realtime/real_time_arbiter.cpp
-    src/engine/game_engine.cpp
-    src/input/controller.cpp
-    
-    # --- IO & Testing ---
-    src/io/board_parser.cpp
-    src/io/board_printer.cpp
-    src/texttests/script_parser.cpp
-    src/texttests/script_runner.cpp
-
-    # --- View (Graphics Layer) ---
-    src/view/asset_locator.cpp
-    src/view/board_layout.cpp
-    src/view/img.cpp
-    src/view/animation_data.cpp
-    src/view/animation_player.cpp
-    src/view/asset_manager.cpp
-    src/view/piece_view.cpp
-    src/view/renderer.cpp
-    src/view/move_history_manager.cpp
-    src/view/score_manager.cpp
-
-    
+# קוד שמשותף גם ללקוח וגם לשרת (הקלסר המשותף)
+add_library(kungfu_shared
+    src/shared/model/position.cpp
+    src/shared/model/board.cpp
+    src/shared/io/board_parser.cpp
+    src/shared/io/board_printer.cpp
 )
 
-target_link_libraries(kungfu_chess_core PUBLIC ${OpenCV_LIBS})
+# ==========================================
+# 2. Server Core & Executable (המוח)
+# ==========================================
+add_library(kungfu_server_core
+    src/server/rules/piece_rules.cpp
+    src/server/rules/rule_engine.cpp
+    src/server/realtime/real_time_arbiter.cpp
+    src/server/engine/game_engine.cpp
+    src/server/texttests/script_parser.cpp
+    src/server/texttests/script_runner.cpp
+    src/server/network/network_server.cpp 
+)
+# השרת צריך להכיר את הקוד המשותף (כדי להבין מה זה חייל ומה זה מיקום)
+target_link_libraries(kungfu_server_core PRIVATE kungfu_shared)
+
+# יצירת קובץ ההרצה של השרת (server_main.cpp)
+add_executable(kungfu_server_app src/server/server_main.cpp
+    src/server/network/network_server.cpp
+    src/server/game/game_session.cpp)
+target_link_libraries(kungfu_server_app PRIVATE kungfu_server_core)
+
+# חיבור ספריות רשת של חלונות (חובה לתקשורת WebSockets בווינדוס)
+if(WIN32)
+    target_link_libraries(kungfu_server_app PRIVATE ws2_32)
+endif()
 
 # ==========================================
-# 2. Game executable
+# 3. Client Core & Executable (התצוגה)
 # ==========================================
-add_executable(kungfu_chess_app src/main.cpp)
-target_link_libraries(kungfu_chess_app PRIVATE kungfu_chess_core)
+add_library(kungfu_client_core
+    src/client/input/controller.cpp
+    src/client/view/asset_locator.cpp
+    src/client/view/board_layout.cpp
+    src/client/view/img.cpp
+    src/client/view/animation_data.cpp
+    src/client/view/animation_player.cpp
+    src/client/view/asset_manager.cpp
+    src/client/view/piece_view.cpp
+    src/client/view/renderer.cpp
+    src/client/view/move_history_manager.cpp
+    src/client/view/score_manager.cpp
+    src/client/network/network_client.cpp
+)
+# הלקוח צריך גם את הקוד המשותף וגם את ספריית OpenCV בשביל הציור
+target_link_libraries(kungfu_client_core PUBLIC opencv_world451d)
+target_link_libraries(kungfu_client_core PRIVATE kungfu_shared)
+
+# יצירת קובץ ההרצה של הלקוח (client_main.cpp)
+add_executable(kungfu_client_app src/client/client_main.cpp
+    src/client/network/network_client.cpp)
+target_link_libraries(kungfu_client_app PRIVATE kungfu_client_core)
+
+# חיבור ספריות רשת ללקוח
+if(WIN32)
+    target_link_libraries(kungfu_client_app PRIVATE ws2_32)
+endif()
 
 # ==========================================
-# 3. Test executable
+# 4. Test executable
 # ==========================================
 add_executable(kungfu_chess_tests
     tests/test_main.cpp
@@ -79,18 +109,17 @@ add_executable(kungfu_chess_tests
     tests/integration/test_text_scripts.cpp
 )
 
-# Link the core library
-target_link_libraries(kungfu_chess_tests PRIVATE kungfu_chess_core)
+# הטסטים צריכים לגשת גם ללוגיקה של השרת, גם של הלקוח וגם של הקוד המשותף כדי לבדוק את כל המערכת
+target_link_libraries(kungfu_chess_tests PRIVATE kungfu_client_core kungfu_server_core kungfu_shared)
 
-target_link_libraries(kungfu_chess_core PUBLIC
-    opencv_world451d
-)
 # ==========================================
-# Optional: coverage settings (for VSCode coverage reporting)
+# Optional: coverage settings
 # ==========================================
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(kungfu_chess_core PRIVATE --coverage)
-    target_link_options(kungfu_chess_core PRIVATE --coverage)
+    target_compile_options(kungfu_client_core PRIVATE --coverage)
+    target_link_options(kungfu_client_core PRIVATE --coverage)
+    target_compile_options(kungfu_server_core PRIVATE --coverage)
+    target_link_options(kungfu_server_core PRIVATE --coverage)
     target_compile_options(kungfu_chess_tests PRIVATE --coverage)
     target_link_options(kungfu_chess_tests PRIVATE --coverage)
 endif()
