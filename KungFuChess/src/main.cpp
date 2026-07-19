@@ -1,5 +1,6 @@
 ﻿#include <iostream>
 #include <chrono>
+#include <optional>
 #include <opencv2/opencv.hpp>
 
 #include "engine/game_engine.hpp"
@@ -76,11 +77,15 @@ int main()
 
             engine.wait(dt);
 
-            GameSnapshot snapshot = engine.getSnapshot();
+            std::optional<Position> currentSelection = controller.getSelectedCell();
+
+            GameSnapshot snapshot = engine.getSnapshot(currentSelection);
+            
             renderer.renderFrame(snapshot, absoluteTime, dt);
 
             int key = cv::waitKey(1);
-            if (key == 27 || snapshot.isGameOver)
+            
+            if (key == 27)
                 break;
         }
     }

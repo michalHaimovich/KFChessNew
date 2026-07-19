@@ -1,6 +1,8 @@
 ﻿#pragma once
 #include <vector>
 #include <string>
+#include <optional>
+#include <set>
 #include "model/game_state.hpp"
 #include "rules/rule_engine.hpp"
 #include "realtime/real_time_arbiter.hpp"
@@ -12,6 +14,9 @@ struct GameSnapshot {
     std::vector<Piece> stationaryPieces;
     std::vector<Motion> activeMotions;
     bool isGameOver;
+    std::optional<Piece> selectedPiece; 
+    std::set<Position> highlightedCells; 
+    std::optional<PieceColor> winner;
 
     // Checks whether a coordinate is inside the board bounds.
     bool isInside(Position p) const {
@@ -41,9 +46,7 @@ private:
     RuleEngine ruleEngine;
     RealTimeArbiter arbiter;
 
-    // Processes pieces that have just landed.
     void processArrivals(const std::vector<Motion>& arrivals);
-
     void resolvePhysicsTick();
 
     std::vector<GameObserver*> observers;
@@ -52,28 +55,18 @@ private:
     void notifyPieceCaptured(const Piece& capturedPiece);
 
 public:
-    // Initializes the internal game state.
     GameEngine(int width, int height);
 
     void setupStandardBoard();
-
-    // Requests a jump to the specified position.
     bool requestJump(Position pos);
-
-    // Exposes the game state for testing.
     GameState& getGameState();
-
-    // Requests a move and starts it if valid.
     bool requestMove(Position source, Position destination, long durationMs = 1000);
-
-    // Advances the simulated clock and processes arrivals.
     void wait(long ms);
 
-    // Creates a read-only snapshot for the view layer.
-    GameSnapshot getSnapshot() const;
+    // UPDATED: Now accepts an optional selected position from the controller
+    GameSnapshot getSnapshot(std::optional<Position> selectedPos = std::nullopt) const;
 
     void addObserver(GameObserver* observer) {
         observers.push_back(observer);
     }
-    
 };

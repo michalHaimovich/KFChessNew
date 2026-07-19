@@ -36,28 +36,25 @@ bool GameEngine::requestMove(Position source, Position destination, long duratio
 void GameEngine::wait(long ms) {
     if (currentState.isGameOver) return;
 
-    const long TICK_MS = 50; // physics refresh rate
+    const long TICK_MS = 50; 
     long elapsed = 0;
 
     while (elapsed < ms) {
         long step = std::min(TICK_MS, ms - elapsed);
         
-        // advance the clock
         arbiter.advanceTime(step);
-        
-        // compute airborne collisions
         resolvePhysicsTick();
 
         for (const auto& motion : arbiter.getActiveMotionsConst()) {
             if (motion.isDead && ruleEngine.isFatalDeath(motion.piece.kind)) {
                 currentState.isGameOver = true;
+                // NEW: The piece that died in motion gives the win to the opposite color
+                currentState.winner = (motion.piece.color == PieceColor::White) ? PieceColor::Black : PieceColor::White;
             }
         }
         
-        // clean up motions marked as dead in the air
         arbiter.cleanupDeadMotions();
 
-        // check which pieces arrived just now
         std::vector<Motion> arrivals = arbiter.popArrivedMotions();
         processArrivals(arrivals);
 
@@ -80,11 +77,9 @@ void GameEngine::wait(long ms) {
                 }
             }
         }
-
         elapsed += step;
     }
 }
-
 void GameEngine::resolvePhysicsTick() {
     auto& motions = arbiter.getActiveMotionsRef();
     long now = arbiter.getCurrentTime();
@@ -103,14 +98,13 @@ void GameEngine::resolvePhysicsTick() {
                 Piece stationaryPiece = stationaryOpt.value();
                 
                 if (stationaryPiece.color != motions[i].piece.color) {
-                    
-                    // Notify observers about the mid-air capture for the score manager
                     notifyPieceCaptured(stationaryPiece);
-                    
                     currentState.board.removePiece(pos); 
                     
                     if (ruleEngine.isFatalDeath(stationaryPiece.kind)) {
                         currentState.isGameOver = true;
+                        // NEW: Motion piece killed a fatal stationary piece
+                        currentState.winner = motions[i].piece.color;
                     }
                     
                 } else {
@@ -125,7 +119,7 @@ void GameEngine::resolvePhysicsTick() {
         }
     }
     for (size_t i = 0; i < motions.size(); ++i) {
-        if (motions[i].isDead) continue; // skip dead motions
+        if (motions[i].isDead) continue; 
 
         for (size_t j = i + 1; j < motions.size(); ++j) {
             if (motions[j].isDead) continue;
@@ -133,14 +127,13 @@ void GameEngine::resolvePhysicsTick() {
             Position pos1 = motions[i].getCurrentCell(now);
             Position pos2 = motions[j].getCurrentCell(now);
 
-            Position prevPos1 = motions[i].getCurrentCell(now - 50); // where it was before the tick
+            Position prevPos1 = motions[i].getCurrentCell(now - 50); 
             Position prevPos2 = motions[j].getCurrentCell(now - 50);
 
             if (pos1 == pos2 || (pos1 == prevPos2 && pos2 == prevPos1)) {
                 Motion& m1 = motions[i];
                 Motion& m2 = motions[j];
 
-                // 1. jumps
                 if (m1.type == MotionType::Jump || m2.type == MotionType::Jump) {
                     Motion& jumper = (m1.type == MotionType::Jump) ? m1 : m2;
                     Motion& walker = (m1.type == MotionType::Jump) ? m2 : m1;
@@ -148,9 +141,14 @@ void GameEngine::resolvePhysicsTick() {
                     if (walker.type == MotionType::Jump) continue;
 
                     if (jumper.piece.color != walker.piece.color) {
-                        walker.isDead = true; // destroyed in air
-
+                        walker.isDead = true; 
                         notifyPieceCaptured(walker.piece);
+
+                        // NEW: Mid-air jump kill
+                        if (ruleEngine.isFatalDeath(walker.piece.kind)) {
+                            currentState.isGameOver = true;
+                            currentState.winner = jumper.piece.color;
+                        }
 
                     } else if (walker.piece.kind != PieceKind::Knight) {
                         walker.arrivalTime = now; 
@@ -167,17 +165,18 @@ void GameEngine::resolvePhysicsTick() {
                     
                     if (m1.startTime < m2.startTime) {
                         m2.isDead = true; 
-
                         notifyPieceCaptured(m2.piece);
-
-                        if (ruleEngine.isFatalDeath(m2.piece.kind)) currentState.isGameOver = true;
-
+                        if (ruleEngine.isFatalDeath(m2.piece.kind)) {
+                            currentState.isGameOver = true;
+                            currentState.winner = m1.piece.color; // NEW
+                        }
                     } else if (m2.startTime < m1.startTime) {
                         m1.isDead = true;
-
                         notifyPieceCaptured(m1.piece);
-
-                        if (ruleEngine.isFatalDeath(m1.piece.kind)) currentState.isGameOver = true;
+                        if (ruleEngine.isFatalDeath(m1.piece.kind)) {
+                            currentState.isGameOver = true;
+                            currentState.winner = m2.piece.color; // NEW
+                        }
                     } else {
                         m1.isDead = true;
                         m2.isDead = true;
@@ -185,6 +184,7 @@ void GameEngine::resolvePhysicsTick() {
                         notifyPieceCaptured(m2.piece);
                         if (ruleEngine.isFatalDeath(m1.piece.kind) || ruleEngine.isFatalDeath(m2.piece.kind)) {
                             currentState.isGameOver = true;
+                            // If both kings die exactly on the same millisecond, it's a draw (no winner)
                         }
                     }
                 } else {
@@ -224,13 +224,11 @@ void GameEngine::processArrivals(const std::vector<Motion>& arrivals) {
 
         ruleEngine.processArrival(currentState.board, landingPiece);
 
-        // Track if a capture happens exactly at the destination
         bool destinationCapture = false;
 
         auto targetCellPiece = currentState.board.getPiece(landingPiece.cell);
         if (targetCellPiece.has_value()) {
             
-            // Prevent friendly fire - landing piece is discarded, friend survives
             if (targetCellPiece->color == landingPiece.color) {
                 int dr = (motion.destination.row > motion.source.row) ? 1 : (motion.destination.row < motion.source.row) ? -1 : 0;
                 int dc = (motion.destination.col > motion.source.col) ? 1 : (motion.destination.col < motion.source.col) ? -1 : 0;
@@ -245,26 +243,26 @@ void GameEngine::processArrivals(const std::vector<Motion>& arrivals) {
             
             currentState.board.removePiece(landingPiece.cell);
             
-            // generic end-of-game check
             if (ruleEngine.isFatalDeath(targetCellPiece->kind)) {
                 currentState.isGameOver = true;
+                // NEW: The landing piece captured a fatal piece
+                currentState.winner = landingPiece.color; 
             }
         }
 
-        // Notify move completion with the precise destinationCapture flag
         notifyMoveCompleted(landingPiece, motion.source, motion.destination, destinationCapture, currentTime);
 
         currentState.board.addPiece(landingPiece);
     }
 }
 
-GameSnapshot GameEngine::getSnapshot() const {
+GameSnapshot GameEngine::getSnapshot(std::optional<Position> selectedPos) const {
     GameSnapshot snap;
     snap.boardWidth = currentState.board.getWidth();
     snap.boardHeight = currentState.board.getHeight();
     snap.isGameOver = currentState.isGameOver;
+    snap.winner = currentState.winner; // Assuming you added this to GameState
 
-    // 1. collect pieces physically on the board (ground)
     for (int r = 0; r < snap.boardHeight; ++r) {
         for (int c = 0; c < snap.boardWidth; ++c) {
             auto p = currentState.board.getPiece(Position{r, c});
@@ -274,9 +272,18 @@ GameSnapshot GameEngine::getSnapshot() const {
         }
     }
     
-    // 2. clean architecture: engine adds airborne pieces into the snapshot.
-    // the renderer does not know they are airborne; it only receives their start positions.
     snap.activeMotions = arbiter.getActiveMotionsConst();
+    
+    // NEW: Handle Selection and Highlights
+    if (selectedPos.has_value()) {
+        auto pieceOpt = currentState.board.getPiece(selectedPos.value());
+        
+        // Only highlight if there is a piece there AND it's currently Idle (can be moved)
+        if (pieceOpt.has_value() && pieceOpt.value().state == PieceState::Idle) {
+            snap.selectedPiece = pieceOpt.value();
+            snap.highlightedCells = ruleEngine.getLegalDestinations(currentState.board, pieceOpt.value());
+        }
+    }
     
     return snap;
 }

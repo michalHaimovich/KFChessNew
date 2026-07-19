@@ -32,11 +32,17 @@ private:
     void drawUIBackground();
     void drawBoardBackground();
     
-    void drawStationaryPieces(const GameSnapshot& snapshot, long dt);
+    // Updated to receive currentTime for the Rest Bar calculation
+    void drawStationaryPieces(const GameSnapshot& snapshot, long currentTime, long dt);
     void drawActiveMotions(const GameSnapshot& snapshot, long currentTime, long dt);
     
     void drawSidePanels(const GameSnapshot& snapshot);
     void drawMoveTable(const std::string& title, int x, int y, int w, int h, const std::vector<MoveRecord>& moves);
+
+    // New UI Elements
+    void drawHighlights(const GameSnapshot& snapshot);
+    void drawRestBar(const Piece& piece, long currentTime);
+    void drawGameOverOverlay(const GameSnapshot& snapshot);
 
 public:
     Renderer(int winWidth, int winHeight, 

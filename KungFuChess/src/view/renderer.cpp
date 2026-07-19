@@ -3,6 +3,12 @@
 #include <algorithm>
 #include <iostream>
 
+// Constants for Rest Bar
+const cv::Scalar kRestBarColour{90, 200, 90, 255};
+const cv::Scalar kRestBarTrackColour{40, 40, 40, 255};
+constexpr int kRestBarHeight = 5;
+constexpr int kRestBarInset = 4;
+
 Renderer::Renderer(int winWidth, int winHeight, 
                    int logicalRows, int logicalCols, 
                    int marginLeft, int marginTop, int marginRight, int marginBottom,
@@ -22,10 +28,17 @@ void Renderer::renderFrame(const GameSnapshot& snapshot, long currentTime, long 
     drawUIBackground();
     drawBoardBackground();
     
-    drawStationaryPieces(snapshot, dt);
+    // Draw highlights BEFORE pieces so they don't cover them
+    drawHighlights(snapshot);
+    
+    // Passed currentTime so pieces know how to draw their Rest Bars
+    drawStationaryPieces(snapshot, currentTime, dt);
     drawActiveMotions(snapshot, currentTime, dt);
     
     drawSidePanels(snapshot);
+    
+    // Draw Game Over overlay if the game ended
+    drawGameOverOverlay(snapshot);
     
     cv::imshow("Kung Fu Chess", windowBuffer.get_mat());
 }
@@ -70,7 +83,7 @@ void Renderer::drawBoardBackground() {
     }
 }
 
-void Renderer::drawStationaryPieces(const GameSnapshot& snapshot, long dt) {
+void Renderer::drawStationaryPieces(const GameSnapshot& snapshot, long currentTime, long dt) {
     for (const Piece& piece : snapshot.stationaryPieces) {
         if (pieceViews.find(piece.id) == pieceViews.end()) {
             pieceViews.emplace(piece.id, PieceView(piece.id));
@@ -85,6 +98,11 @@ void Renderer::drawStationaryPieces(const GameSnapshot& snapshot, long dt) {
             const_cast<Img&>(frame).draw_on(windowBuffer, pixelX, pixelY);
         } catch (...) {
             std::cerr << "Warning: Stationary piece out of bounds at " << pixelX << ", " << pixelY << std::endl;
+        }
+
+        // Draw the Rest Bar if the piece is cooling down
+        if (piece.state == PieceState::ShortRest || piece.state == PieceState::LongRest) {
+            drawRestBar(piece, currentTime);
         }
     }
 }
@@ -187,4 +205,119 @@ void Renderer::drawMoveTable(const std::string& title, int x, int y, int w, int 
         
         rowY += 24; 
     }
+}
+
+// ==========================================
+// NEW UI ELEMENTS
+// ==========================================
+
+void Renderer::drawHighlights(const GameSnapshot& snapshot) {
+    cv::Mat& canvas = const_cast<cv::Mat&>(windowBuffer.get_mat());
+    if (canvas.empty()) return;
+
+    int cellSize = layout.getCellSize();
+    cv::Mat overlay;
+    canvas.copyTo(overlay);
+    bool shouldBlend = false;
+
+    // 1. Highlight the currently selected piece in Soft Blue
+    if (snapshot.selectedPiece.has_value()) {
+        auto [pixelX, pixelY] = layout.getCellPixelPos(snapshot.selectedPiece.value().cell.row, snapshot.selectedPiece.value().cell.col);
+        cv::rectangle(overlay, cv::Rect(pixelX, pixelY, cellSize, cellSize), 
+                      cv::Scalar(255, 200, 100), cv::FILLED); // BGR format for Blueish
+        shouldBlend = true;
+    }
+
+    // 2. Highlight all legal destinations
+    for (const Position& pos : snapshot.highlightedCells) {
+        auto [pixelX, pixelY] = layout.getCellPixelPos(pos.row, pos.col);
+        
+        // Differentiate color if an enemy piece is standing there
+        auto targetPiece = snapshot.getPieceAt(pos);
+        if (targetPiece.has_value()) {
+            // Enemy piece - Red Highlight
+            cv::rectangle(overlay, cv::Rect(pixelX, pixelY, cellSize, cellSize), 
+                          cv::Scalar(100, 100, 255), cv::FILLED); 
+        } else {
+            // Empty Cell - Green Highlight
+            cv::rectangle(overlay, cv::Rect(pixelX, pixelY, cellSize, cellSize), 
+                          cv::Scalar(150, 220, 150), cv::FILLED); 
+        }
+        shouldBlend = true;
+    }
+
+    // Apply the transparent overlay
+    if (shouldBlend) {
+        cv::addWeighted(overlay, 0.4, canvas, 0.6, 0, canvas);
+    }
+}
+
+void Renderer::drawRestBar(const Piece& piece, long currentTime) {
+    cv::Mat& pixels = const_cast<cv::Mat&>(windowBuffer.get_mat());
+    auto [pixelX, pixelY] = layout.getCellPixelPos(piece.cell.row, piece.cell.col);
+
+    int width = layout.getCellSize() - 2 * kRestBarInset;
+    int x = pixelX + kRestBarInset;
+    int y = pixelY + layout.getCellSize() - kRestBarInset - kRestBarHeight;
+
+    cv::rectangle(pixels, cv::Rect(x, y, width, kRestBarHeight),
+                  kRestBarTrackColour, cv::FILLED);
+
+    double progress = 1.0;
+    if (piece.readyTime > currentTime) {
+        long remaining = piece.readyTime - currentTime;
+        // Default max values if config isn't explicitly passed, adapt if needed:
+        long totalCooldown = (piece.state == PieceState::LongRest) ? 2000 : 1000; 
+        progress = 1.0 - (static_cast<double>(remaining) / static_cast<double>(totalCooldown));
+    }
+    progress = std::max(0.0, std::min(1.0, progress));
+
+    int left = static_cast<int>(width * progress);
+    if (left > 0) {
+        cv::rectangle(pixels, cv::Rect(x, y, left, kRestBarHeight),
+                      kRestBarColour, cv::FILLED);
+    }
+}
+
+void Renderer::drawGameOverOverlay(const GameSnapshot& snapshot) {
+    if (!snapshot.isGameOver) return;
+
+    cv::Mat& canvas = const_cast<cv::Mat&>(windowBuffer.get_mat());
+    if (canvas.empty()) return;
+
+    auto [boardX, boardY] = layout.getBoardStartPos();
+    int boardW = layout.getCellSize() * 8;
+    int boardH = layout.getCellSize() * 8;
+
+    cv::Mat overlay;
+    canvas.copyTo(overlay);
+    cv::rectangle(overlay, cv::Rect(boardX, boardY, boardW, boardH), cv::Scalar(0, 0, 0), cv::FILLED);
+    cv::addWeighted(overlay, 0.6, canvas, 0.4, 0, canvas);
+
+    std::string text = "GAME OVER";
+    cv::Scalar textColor(150, 150, 150);
+
+    if (snapshot.winner.has_value()) {
+        if (snapshot.winner.value() == PieceColor::White) {
+            text = "WHITE WINS!";
+            textColor = cv::Scalar(255, 255, 255);
+        } else {
+            text = "BLACK WINS!";
+            textColor = cv::Scalar(20, 20, 20);
+        }
+    }
+
+    int fontFace = cv::FONT_HERSHEY_DUPLEX;
+    double fontScale = 1.3;
+    int thickness = 2;
+    int baseline = 0;
+    
+    cv::Size textSize = cv::getTextSize(text, fontFace, fontScale, thickness, &baseline);
+    int textX = boardX + (boardW - textSize.width) / 2;
+    int textY = boardY + (boardH + textSize.height) / 2;
+
+    cv::Scalar outlineColor = (textColor[0] > 128) ? cv::Scalar(0, 0, 0) : cv::Scalar(255, 255, 255);
+    
+    cv::putText(canvas, text, cv::Point(textX, textY), fontFace, fontScale, outlineColor, thickness + 3, cv::LINE_AA);
+    cv::putText(canvas, text, cv::Point(textX, textY), fontFace, fontScale, textColor, thickness, cv::LINE_AA);
 }

@@ -24,4 +24,7 @@ public:
     bool validateMove(const Board& board, const Piece& piece, Position destination) const;
 
     long getCooldownMs(PieceKind kind, PieceState state) const;
+
+    // Retrieves all legal destinations for a specific piece
+    std::set<Position> getLegalDestinations(const Board& board, const Piece& piece) const;
 };

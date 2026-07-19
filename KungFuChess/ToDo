@@ -1,15 +1,19 @@
-טסטים!!
 
-ןלהבין את הrenderer
+לעבור על הrenderer
 
 בתוך המנהל היסטוריה בתצוגה לעשות גנריזציה
 
 לעשות שתוצג הבחירה והמקומת האפשריים לה ללכת...
 
-שהדרך של כל כלי תהיה גנרית.
-
 שיוצג game over
+ומנצח...
 
+
+לתצוגה של רמת הכיסוי:
+OpenCppCoverage.exe --sources C:\Users\micha\KungFooChessNew\KungFuChess --excluded_sources *doctest.h --excluded_sources *\tests\* --export_type html:coverage_report -- .\kungfu_chess_tests.exe
+
+
+CMake: Select Launch Target
 
 
 026667140 8 

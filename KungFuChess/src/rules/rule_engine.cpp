@@ -50,3 +50,12 @@ long RuleEngine::getCooldownMs(PieceKind kind, PieceState state) const {
     }
     return 1000; // defult jast incase...
 }
+
+std::set<Position> RuleEngine::getLegalDestinations(const Board& board, const Piece& piece) const {
+    auto it = rulesRegistry.find(piece.kind);
+    if (it != rulesRegistry.end()) {
+        // Return the set of legal destinations from the specific piece rule
+        return it->second->legalDestinations(board, piece);
+    }
+    return {}; // Empty set if rule not found
+}

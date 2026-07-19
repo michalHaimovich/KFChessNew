@@ -29,6 +29,8 @@ ControllerResult Controller::click(int x, int y) {
     }
     Position p = mappedCellOpt.value();
     
+    // Calling without arguments is perfectly fine here, 
+    // we just need to read the board layout for input validation.
     GameSnapshot snap = engine.getSnapshot();
 
     // clean boundary check against the snapshot
@@ -44,7 +46,8 @@ ControllerResult Controller::click(int x, int y) {
     auto clickedPiece = snap.getPieceAt(p);
 
     if (!selectedCell.has_value()) {
-        if (clickedPiece.has_value()) {
+        // ONLY allow selection if the piece is Idle (ready to move)
+        if (clickedPiece.has_value() && clickedPiece->state == PieceState::Idle) {
             selectedCell = p; 
             return ControllerResult::PieceSelected;
         }
@@ -56,12 +59,22 @@ ControllerResult Controller::click(int x, int y) {
         // switch selection to a friendly piece
         if (clickedPiece.has_value() && selectedPiece.has_value() && 
             clickedPiece->color == selectedPiece->color) {
-            selectedCell = p;
-            return ControllerResult::PieceSelected;
+            
+            // Only switch selection if the new piece is also Idle
+            if (clickedPiece->state == PieceState::Idle) {
+                selectedCell = p;
+                return ControllerResult::PieceSelected;
+            } else {
+                // If they clicked a friendly piece that is resting, just ignore it 
+                // so they don't accidentally lose their current selection.
+                return ControllerResult::Ignored;
+            }
         }
 
         // calculate duration generically instead of using a hardcoded 1000
         long duration = calculateMoveDuration(selectedCell.value(), p);
+        
+        // requestMove will validate against RuleEngine anyway
         engine.requestMove(selectedCell.value(), p, duration); 
         
         selectedCell = std::nullopt; 
