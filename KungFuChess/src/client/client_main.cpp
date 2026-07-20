@@ -15,7 +15,9 @@
 #include "view/renderer.hpp"
 #include "view/move_history_manager.hpp"
 #include "view/score_manager.hpp"
-#include "windows_login_dialog.hpp"
+#include "windows/login_dialog.hpp"
+#include "windows/home_dialog.hpp"
+#include "windows/room_dialog.hpp"
 
 using json = nlohmann::json;
 
@@ -38,22 +40,24 @@ int main()
 {
     try
     {
-        LoginResult userInput = WindowsLoginDialog::ShowDialog();
+        // ==========================================
+        // שלב 1: מסך התחברות
+        // ==========================================
+        LoginResult loginInput = LoginDialog::ShowDialog();
 
-        if (!userInput.success)
+        if (!loginInput.success)
         {
-            std::cout << "User closed the launcher." << std::endl;
+            std::cout << "User closed the login window." << std::endl;
             return 0;
         }
 
-        std::cout << "Connecting to server as " << userInput.username << "...\n";
+        std::cout << "Connecting to server as " << loginInput.username << "...\n";
 
         int rows = 8;
         int cols = 8;
 
         GameSnapshot localSnapshot;
         std::mutex snapshotMutex;
-
         EventBus clientBus;
 
         using clock = std::chrono::high_resolution_clock;
@@ -66,14 +70,11 @@ int main()
         std::string loginErrorMessage = "";
         std::mutex loginMutex;
 
-        // משתנים חדשים למעקב אחרי סטטוס החדר
         std::atomic<int> roomStatus{0}; 
         std::string roomErrorMessage = "";
         std::mutex roomMutex;
 
-        // הוספנו את משתני החדר לרשימת הלכידה
-        network.setOnMessageCallback([&localSnapshot, &snapshotMutex, &startTime, &timeOffset, &clientBus, &loginStatus, &loginErrorMessage, &loginMutex, &roomStatus, &roomErrorMessage, &roomMutex](const std::string &msg)
-                                     {                                     
+        network.setOnMessageCallback([&](const std::string &msg) {                                     
             try {
                 auto j = json::parse(msg);
                 
@@ -88,30 +89,25 @@ int main()
                         loginStatus = -1;
                         return;
                     } 
-                    // טיפול בהודעות של יצירת/הצטרפות לחדר
                     else if (type == "ROOM_SUCCESS") {
                         roomStatus = 1;
                         return;
-                    } else if (type == "ROOM_ERROR") {
+                    } else if (type == "ROOM_ERROR" || type == "MATCH_ERROR") {
                         std::lock_guard<std::mutex> lock(roomMutex);
-                        roomErrorMessage = j.value("message", "Unknown error");
+                        roomErrorMessage = j.value("message", "Unknown room/match error");
                         roomStatus = -1;
                         return;
                     }
                 }
                 
+                // ... (כל שאר הלוגיקה של קליטת מצב הלוח נשארת זהה)
                 GameSnapshot newSnap;
-                
                 newSnap.serverTime = j.value("serverTime", 0LL);
                 newSnap.boardWidth = j.value("boardWidth", 8);
                 newSnap.boardHeight = j.value("boardHeight", 8);
                 newSnap.isGameOver = j.value("isGameOver", false);
-                if (j.contains("whitePlayerName")) {
-                    newSnap.whitePlayerName = j["whitePlayerName"];
-                }   
-                if (j.contains("blackPlayerName")) {
-                   newSnap.blackPlayerName = j["blackPlayerName"];
-                }
+                if (j.contains("whitePlayerName")) newSnap.whitePlayerName = j["whitePlayerName"];
+                if (j.contains("blackPlayerName")) newSnap.blackPlayerName = j["blackPlayerName"];
                 
                 if (newSnap.isGameOver && j.contains("winner")) {
                     newSnap.winner = (j["winner"] == "White") ? PieceColor::White : PieceColor::Black;
@@ -123,10 +119,8 @@ int main()
                                 pJson["color"] == "White" ? PieceColor::White : PieceColor::Black,
                                 static_cast<PieceKind>(pJson["kind"]),
                                 Position{pJson["row"], pJson["col"]});
-                        
                         p.state = static_cast<PieceState>(pJson.value("state", 0)); 
                         p.readyTime = pJson.value("readyTime", 0LL); 
-                        
                         newSnap.stationaryPieces.push_back(p);
                     }
                 }
@@ -135,22 +129,14 @@ int main()
                     for (const auto& mJson : j["activeMotions"]) {
                         PieceColor color = (mJson["pieceColor"] == "White") ? PieceColor::White : PieceColor::Black;
                         PieceKind kind = static_cast<PieceKind>(mJson["pieceKind"]);
-                        
                         Piece p(mJson["pieceId"], color, kind, Position{0,0});
-                        
                         MotionType mType = static_cast<MotionType>(mJson.value("type", 0));
                         p.state = (mType == MotionType::Jump) ? PieceState::Jump : PieceState::Move;
                         
-                        Motion m {
-                            p,
-                            Position{mJson["sourceRow"], mJson["sourceCol"]},
-                            Position{mJson["destRow"], mJson["destCol"]},
-                            mJson.value("startTime", 0LL),
-                            mJson.value("arrivalTime", 0LL),   
-                            mType,
-                            false
-                        };
-                        
+                        Motion m { p, Position{mJson["sourceRow"], mJson["sourceCol"]},
+                                   Position{mJson["destRow"], mJson["destCol"]},
+                                   mJson.value("startTime", 0LL), mJson.value("arrivalTime", 0LL),   
+                                   mType, false };
                         newSnap.activeMotions.push_back(m);
                     }
                 }
@@ -158,27 +144,19 @@ int main()
                 if (j.contains("events")) {
                     for (const auto& eJson : j["events"]) {
                         std::string type = eJson.value("type", "");
-                        
                         if (type == "PieceCapturedEvent") {
-                            Piece p(eJson["pieceId"], 
-                                    eJson["pieceColor"] == "White" ? PieceColor::White : PieceColor::Black,
-                                    static_cast<PieceKind>(eJson["pieceKind"]), 
-                                    Position{0, 0});
-                                    
+                            Piece p(eJson["pieceId"], eJson["pieceColor"] == "White" ? PieceColor::White : PieceColor::Black,
+                                    static_cast<PieceKind>(eJson["pieceKind"]), Position{0, 0});
                             PieceCapturedEvent event(p);
                             clientBus.publish(event);
                         } 
                         else if (type == "MoveCompletedEvent") {
                             Position dest{eJson["destRow"], eJson["destCol"]};
-                            Piece p(eJson["pieceId"], 
-                                    eJson["pieceColor"] == "White" ? PieceColor::White : PieceColor::Black,
-                                    static_cast<PieceKind>(eJson["pieceKind"]), 
-                                    dest);
-                                    
+                            Piece p(eJson["pieceId"], eJson["pieceColor"] == "White" ? PieceColor::White : PieceColor::Black,
+                                    static_cast<PieceKind>(eJson["pieceKind"]), dest);
                             Position src{eJson["sourceRow"], eJson["sourceCol"]};
                             bool capture = eJson.value("destinationCapture", false);
                             long timeMs = eJson.value("timeMs", 0LL);
-                            
                             MoveCompletedEvent event(p, src, dest, capture, timeMs);
                             clientBus.publish(event);
                         }
@@ -203,36 +181,27 @@ int main()
                 
             } catch (const std::exception& e) {
                 std::cerr << "JSON Parse Error: " << e.what() << std::endl;
-            } });
+            } 
+        });
 
+        // ==========================================
+        // שלב 2: יצירת חיבור ושליחת LOGIN
+        // ==========================================
         if (!network.connect("ws://localhost:9002"))
         {
-            std::cerr << "Failed to connect to server!" << std::endl;
+            MessageBoxA(NULL, "Failed to connect to server!", "Connection Error", MB_ICONERROR | MB_OK);
             return -1;
         }
 
-        std::cout << "Waiting for server connection..." << std::endl;
-        while (!network.isConnected())
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+        while (!network.isConnected()) { std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
 
         json loginMsg;
         loginMsg["action"] = "LOGIN";
-        loginMsg["username"] = userInput.username;
-        loginMsg["password"] = userInput.password;
+        loginMsg["username"] = loginInput.username;
+        loginMsg["password"] = loginInput.password;
         network.send(loginMsg.dump());
 
-        json roomMsg;
-        roomMsg["action"] = userInput.action; // "CREATE_ROOM" or "JOIN_ROOM"
-        roomMsg["roomName"] = userInput.roomName;
-        network.send(roomMsg.dump());
-
-        std::cout << "Authenticating..." << std::endl;
-        while (loginStatus.load() == 0)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+        while (loginStatus.load() == 0) { std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
 
         if (loginStatus.load() == -1)
         {
@@ -241,16 +210,46 @@ int main()
                 std::lock_guard<std::mutex> lock(loginMutex);
                 errMsg = loginErrorMessage;
             }
-            std::cerr << "======================================\n";
-            std::cerr << " LOGIN FAILED: " << errMsg << "\n";
-            std::cerr << "======================================\n";
+            MessageBoxA(NULL, errMsg.c_str(), "Login Failed", MB_ICONERROR | MB_OK);
             network.disconnect();
             return -1;
         }
 
-        std::cout << "Login successful! Waiting for room confirmation..." << std::endl;
+        // ==========================================
+        // שלב 3: מסך הבית (בחירת מסלול)
+        // ==========================================
+        HomeResult homeInput = HomeDialog::ShowDialog(loginInput.username);
+        
+        if (homeInput.action == HomeAction::NONE) {
+            network.disconnect();
+            return 0;
+        }
 
-        // המתנה לאישור שהחדר נוצר או שנכנסנו לחדר קיים
+        if (homeInput.action == HomeAction::ENTER_ROOM) {
+            // בחרו בחדר ספציפי - פותחים את מסך החדרים
+            RoomResult roomInput = RoomDialog::ShowDialog();
+            if (!roomInput.success) {
+                network.disconnect();
+                return 0;
+            }
+            
+            json roomMsg;
+            roomMsg["action"] = roomInput.action; // CREATE_ROOM או JOIN_ROOM
+            roomMsg["roomName"] = roomInput.roomName;
+            network.send(roomMsg.dump());
+            
+            std::cout << "Waiting for room confirmation..." << std::endl;
+        } 
+        else if (homeInput.action == HomeAction::PLAY_RANDOM) {
+            // בחרו במשחק אקראי
+            json matchMsg;
+            matchMsg["action"] = "FIND_MATCH";
+            network.send(matchMsg.dump());
+            
+            std::cout << "Searching for a random match... (up to 60 seconds)" << std::endl;
+        }
+
+        // המתנה לאישור מהשרת (או לחדר או ל-Matchmaking)
         while (roomStatus.load() == 0)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -263,18 +262,15 @@ int main()
                 std::lock_guard<std::mutex> lock(roomMutex);
                 errMsg = roomErrorMessage;
             }
-            std::cerr << "======================================\n";
-            std::cerr << " ROOM ERROR: " << errMsg << "\n";
-            std::cerr << "======================================\n";
-            
-            // הקפצת חלונית שגיאה למשתמש
-            MessageBoxA(NULL, errMsg.c_str(), "Room Error", MB_ICONERROR | MB_OK);
-            
+            MessageBoxA(NULL, errMsg.c_str(), "Room/Match Error", MB_ICONERROR | MB_OK);
             network.disconnect();
             return -1;
         }
 
-        std::cout << "Room joined successfully! Loading game board..." << std::endl;
+        // ==========================================
+        // שלב 4: טעינת המשחק (OpenCV)
+        // ==========================================
+        std::cout << "Match found/joined! Loading game board..." << std::endl;
 
         ScoreManager scoreManager(&clientBus);
         MoveHistoryManager historyManager(&clientBus);
@@ -289,8 +285,6 @@ int main()
         cv::resizeWindow(windowName, 1024, 720);
         cv::setMouseCallback(windowName, onMouse, &controller);
         long lastAbsoluteTime = 0;
-
-        std::cout << "Starting Kung Fu Chess Client Loop..." << std::endl;
 
         while (true)
         {
@@ -312,7 +306,6 @@ int main()
             long serverSyncedTime = absoluteTime + timeOffset.load();
 
             GameSnapshot renderSnapshot;
-
             {
                 std::lock_guard<std::mutex> lock(snapshotMutex);
                 renderSnapshot = localSnapshot;
