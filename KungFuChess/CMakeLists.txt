@@ -7,17 +7,16 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ==========================================
-# 0. Third-Party Libraries (WebSockets & ASIO)
+# 0. Third-Party Libraries (WebSockets & ASIO & JSON)
 # ==========================================
-# מגדיר ל-CMake איפה לחפש את ספריות הרשת שהורדנו
 include_directories(${CMAKE_SOURCE_DIR}/third_party/asio/include)
+
 include_directories(${CMAKE_SOURCE_DIR}/third_party)
 
 # OpenCV include and library directories (Moved to Client)
 include_directories(src/client/OpenCV/include)
 link_directories(src/client/OpenCV/bin)
 
-# הוספת נתיבי התיקיות החדשות כדי ש-includes יעבדו בצורה חלקה
 include_directories(src/shared)
 include_directories(src/client)
 include_directories(src/server)
@@ -26,7 +25,6 @@ include_directories(tests)
 # ==========================================
 # 1. Shared Library (Model & IO)
 # ==========================================
-# קוד שמשותף גם ללקוח וגם לשרת (הקלסר המשותף)
 add_library(kungfu_shared
     src/shared/model/position.cpp
     src/shared/model/board.cpp
@@ -42,20 +40,18 @@ add_library(kungfu_server_core
     src/server/rules/rule_engine.cpp
     src/server/realtime/real_time_arbiter.cpp
     src/server/engine/game_engine.cpp
-    src/server/texttests/script_parser.cpp
-    src/server/texttests/script_runner.cpp
+   # src/server/texttests/script_parser.cpp
+   # src/server/texttests/script_runner.cpp
     src/server/network/network_server.cpp 
+    src/server/game/game_session.cpp
+    src/server/game/server_controller.cpp
 )
-# השרת צריך להכיר את הקוד המשותף (כדי להבין מה זה חייל ומה זה מיקום)
 target_link_libraries(kungfu_server_core PRIVATE kungfu_shared)
 
-# יצירת קובץ ההרצה של השרת (server_main.cpp)
-add_executable(kungfu_server_app src/server/server_main.cpp
-    src/server/network/network_server.cpp
-    src/server/game/game_session.cpp)
+# רק ה-main נשאר פה, השאר עברו ל-core
+add_executable(kungfu_server_app src/server/server_main.cpp)
 target_link_libraries(kungfu_server_app PRIVATE kungfu_server_core)
 
-# חיבור ספריות רשת של חלונות (חובה לתקשורת WebSockets בווינדוס)
 if(WIN32)
     target_link_libraries(kungfu_server_app PRIVATE ws2_32)
 endif()
@@ -77,16 +73,14 @@ add_library(kungfu_client_core
     src/client/view/score_manager.cpp
     src/client/network/network_client.cpp
 )
-# הלקוח צריך גם את הקוד המשותף וגם את ספריית OpenCV בשביל הציור
+
 target_link_libraries(kungfu_client_core PUBLIC opencv_world451d)
 target_link_libraries(kungfu_client_core PRIVATE kungfu_shared)
 
-# יצירת קובץ ההרצה של הלקוח (client_main.cpp)
-add_executable(kungfu_client_app src/client/client_main.cpp
-    src/client/network/network_client.cpp)
+# רק ה-main נשאר פה, השאר עברו ל-core
+add_executable(kungfu_client_app src/client/client_main.cpp)
 target_link_libraries(kungfu_client_app PRIVATE kungfu_client_core)
 
-# חיבור ספריות רשת ללקוח
 if(WIN32)
     target_link_libraries(kungfu_client_app PRIVATE ws2_32)
 endif()
@@ -109,7 +103,6 @@ add_executable(kungfu_chess_tests
     tests/integration/test_text_scripts.cpp
 )
 
-# הטסטים צריכים לגשת גם ללוגיקה של השרת, גם של הלקוח וגם של הקוד המשותף כדי לבדוק את כל המערכת
 target_link_libraries(kungfu_chess_tests PRIVATE kungfu_client_core kungfu_server_core kungfu_shared)
 
 # ==========================================

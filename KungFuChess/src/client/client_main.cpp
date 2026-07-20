@@ -1,17 +1,21 @@
 ﻿#include <iostream>
 #include <chrono>
 #include <optional>
+#include <mutex>
+#include <atomic>
 #include <opencv2/opencv.hpp>
 #include <websocketpp/client.hpp>
+#include <nlohmann/json.hpp>
 
 #include "network/network_client.hpp"
 #include "model/game_snapshot.hpp" 
-
 #include "input/controller.hpp"
 #include "input/board_mapper.hpp"
 #include "view/renderer.hpp"
 #include "view/move_history_manager.hpp"
 #include "view/score_manager.hpp"
+
+using json = nlohmann::json;
 
 void onMouse(int event, int x, int y, int flags, void *userdata) {
     Controller *controller = static_cast<Controller *>(userdata);
@@ -24,47 +28,108 @@ void onMouse(int event, int x, int y, int flags, void *userdata) {
 
 int main() {
     try {
-        // --- הגדרות תצוגה ---
         int rows = 8;
         int cols = 8;
-        int windowWidth = 1000;
-        int windowHeight = 700;
 
-        // --- 1. יצירת עותק לוח מקומי ---
         GameSnapshot localSnapshot; 
+        std::mutex snapshotMutex; 
         
-        // --- 2. הפעלת רכיב התקשורת ---
+        using clock = std::chrono::high_resolution_clock;
+        auto startTime = clock::now();
+        std::atomic<long> timeOffset{0}; 
+         
         NetworkClient network;
         
-        // הגדרת מה קורה כשהשרת שולח עדכון
-        network.setOnMessageCallback([&localSnapshot](const std::string& msg) {
-            // TODO: כאן נכתוב בעתיד פונקציה שמפרשת את המחרוזת מהשרת
-            // ומעדכנת את ה-localSnapshot בהתאם!
-            std::cout << "Server says: " << msg << std::endl;
-        });
+        network.setOnMessageCallback([&localSnapshot, &snapshotMutex, &startTime, &timeOffset](const std::string& msg) {
+            try {
+                auto j = json::parse(msg);
+                GameSnapshot newSnap;
+                
+                newSnap.serverTime = j.value("serverTime", 0LL);
+                newSnap.boardWidth = j.value("boardWidth", 8);
+                newSnap.boardHeight = j.value("boardHeight", 8);
+                newSnap.isGameOver = j.value("isGameOver", false);
+                
+                if (newSnap.isGameOver && j.contains("winner")) {
+                    newSnap.winner = (j["winner"] == "White") ? PieceColor::White : PieceColor::Black;
+                }
 
-        // חיבור לשרת (חייב להיות דלוק ברקע)
+                if (j.contains("stationaryPieces")) {
+                    for (const auto& pJson : j["stationaryPieces"]) {
+                        Piece p(pJson["id"], 
+                                pJson["color"] == "White" ? PieceColor::White : PieceColor::Black,
+                                static_cast<PieceKind>(pJson["kind"]),
+                                Position{pJson["row"], pJson["col"]});
+                        
+                        p.state = static_cast<PieceState>(pJson.value("state", 0)); 
+                        p.readyTime = pJson.value("readyTime", 0LL); 
+                        
+                        newSnap.stationaryPieces.push_back(p);
+                    }
+                }
+
+                if (j.contains("activeMotions")) {
+                    for (const auto& mJson : j["activeMotions"]) {
+                        PieceColor color = (mJson["pieceColor"] == "White") ? PieceColor::White : PieceColor::Black;
+                        PieceKind kind = static_cast<PieceKind>(mJson["pieceKind"]);
+                        
+                        Piece p(mJson["pieceId"], color, kind, Position{0,0});
+                        
+                        MotionType mType = static_cast<MotionType>(mJson.value("type", 0));
+                        p.state = (mType == MotionType::Jump) ? PieceState::Jump : PieceState::Move;
+                        
+                        Motion m {
+                            p,
+                            Position{mJson["sourceRow"], mJson["sourceCol"]},
+                            Position{mJson["destRow"], mJson["destCol"]},
+                            mJson.value("startTime", 0LL),
+                            mJson.value("arrivalTime", 0LL),   
+                            mType,
+                            false
+                        };
+                        
+                        newSnap.activeMotions.push_back(m);
+                    }
+                }
+
+                static bool offsetInitialized = false;
+                long currentLocalTime = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - startTime).count();
+                long currentOffset = newSnap.serverTime - currentLocalTime;
+                
+                if (!offsetInitialized) {
+                    timeOffset = currentOffset;
+                    offsetInitialized = true;
+                } else {
+                    timeOffset = (timeOffset.load() * 0.95) + (currentOffset * 0.05);
+                }
+                
+                {
+                    std::lock_guard<std::mutex> lock(snapshotMutex);
+                    localSnapshot = newSnap;
+                }
+                
+            } catch (const std::exception& e) {
+                std::cerr << "JSON Parse Error: " << e.what() << std::endl;
+            }
+        }); 
+
         if (!network.connect("ws://localhost:9002")) {
             std::cerr << "Failed to connect to server!" << std::endl;
             return -1;
         }
 
-        // --- 3. הגדרות תצוגה וקלט ---
         ScoreManager scoreManager;
         MoveHistoryManager historyManager;
 
-        Renderer renderer(1024, 720, rows, cols, 260, 100, 260, 100, "assets/", &scoreManager, &historyManager);
+        Renderer renderer(1024, 720, rows, cols, 260, 100, 260, 100, "../assets/", &scoreManager, &historyManager);
         BoardMapper mapper(renderer.getBoardStartX(), renderer.getBoardStartY(), renderer.getCellSize());
         
-        // ה-Controller מקבל עכשיו את הרשת ואת הלוח המקומי
         Controller controller(network, localSnapshot, mapper);
 
         std::string windowName = "Kung Fu Chess";
         cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
         cv::setMouseCallback(windowName, onMouse, &controller);
 
-        using clock = std::chrono::high_resolution_clock;
-        auto startTime = clock::now();
         long lastAbsoluteTime = 0;
 
         std::cout << "Starting Kung Fu Chess Client Loop..." << std::endl;
@@ -75,20 +140,24 @@ int main() {
             long dt = absoluteTime - lastAbsoluteTime;
             lastAbsoluteTime = absoluteTime;
 
-            // המנוע המקומי והשהיות הזמן הוסרו - השרת שולט בזמן!
+            long serverSyncedTime = absoluteTime + timeOffset.load();
 
-            // מעבירים את מצב הבחירה לציור
-            std::optional<Position> currentSelection = controller.getSelectedCell();
+            GameSnapshot renderSnapshot;
             
-            // TODO: במקור המנוע החזיר סנאפשוט מעודכן עם הבחירה.
-            // עכשיו נצטרך לעדכן את הבחירה באופן ויזואלי בסנאפשוט הנוכחי לפני הרינדור.
-            GameSnapshot renderSnapshot = localSnapshot;
-            // renderSnapshot.setSelected(currentSelection); // תלוי איך מימשת את זה במודל
+            {
+                std::lock_guard<std::mutex> lock(snapshotMutex);
+                renderSnapshot = localSnapshot;
+            }
 
-            renderer.renderFrame(renderSnapshot, absoluteTime, dt);
+            std::optional<Position> currentSelection = controller.getSelectedCell();
+            if (currentSelection.has_value()) {
+                renderSnapshot.selectedPiece = renderSnapshot.getPieceAt(currentSelection.value());
+            }
+
+            renderer.renderFrame(renderSnapshot, serverSyncedTime, dt);
 
             int key = cv::waitKey(1);
-            if (key == 27) break; // יציאה עם ESC
+            if (key == 27) break; 
         }
         
         network.disconnect();

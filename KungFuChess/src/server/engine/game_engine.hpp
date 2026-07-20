@@ -3,6 +3,8 @@
 #include <string>
 #include <optional>
 #include <set>
+#include <mutex>
+
 #include "model/game_state.hpp"
 #include "rules/rule_engine.hpp"
 #include "realtime/real_time_arbiter.hpp"
@@ -26,6 +28,8 @@ private:
     void resolvePhysicsTick();
 
     std::vector<GameObserver*> observers;
+
+    mutable std::mutex mtx;
     
     void notifyMoveCompleted(const Piece& piece, Position source, Position dest, bool destinationCapture, long timeMs);    
     void notifyPieceCaptured(const Piece& capturedPiece);

@@ -49,16 +49,16 @@ void NetworkClient::on_message(websocketpp::connection_hdl hdl, client::message_
     }
 }
 
-void NetworkClient::sendMove(int fromX, int fromY, int toX, int toY) {
+void NetworkClient::sendMove(int fromCol, int fromRow, int toCol, int toRow) {
     if (!m_connected) return;
-    std::string payload = "MOVE " + std::to_string(fromX) + "," + std::to_string(fromY) + 
-                          " TO " + std::to_string(toX) + "," + std::to_string(toY);
+    std::string payload = "MOVE " + std::to_string(fromRow) + " " + std::to_string(fromCol) + 
+                          " " + std::to_string(toRow) + " " + std::to_string(toCol);
     m_client.send(m_hdl, payload, websocketpp::frame::opcode::text);
 }
 
-void NetworkClient::sendJump(int toX, int toY) {
+void NetworkClient::sendJump(int toCol, int toRow) {
     if (!m_connected) return;
-    std::string payload = "JUMP TO " + std::to_string(toX) + "," + std::to_string(toY);
+    std::string payload = "JUMP " + std::to_string(toRow) + " " + std::to_string(toCol);
     m_client.send(m_hdl, payload, websocketpp::frame::opcode::text);
 }
 

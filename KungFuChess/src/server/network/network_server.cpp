@@ -1,33 +1,50 @@
 #include "network_server.hpp"
-#include <functional>
+#include <iostream>
 
+NetworkServer::NetworkServer() 
+    : m_gameSession([this](websocketpp::connection_hdl hdl, const std::string& msg) { 
+          this->sendToClient(hdl, msg); 
+      }), 
+      m_controller(m_gameSession.getEngine()) 
+{    
+    m_server.init_asio();
 
-NetworkServer::NetworkServer() {
-    m_endpoint.set_error_channels(websocketpp::log::elevel::all);
-    m_endpoint.set_access_channels(websocketpp::log::alevel::all);
+    m_server.set_open_handler(bind(&NetworkServer::on_open, this, std::placeholders::_1));
+    m_server.set_close_handler(bind(&NetworkServer::on_close, this, std::placeholders::_1));
+    m_server.set_message_handler(bind(&NetworkServer::on_message, this, std::placeholders::_1, std::placeholders::_2));
+}
 
-    m_endpoint.init_asio();
-
-    m_endpoint.set_open_handler(std::bind(&NetworkServer::on_open, this, std::placeholders::_1));
-    m_endpoint.set_close_handler(std::bind(&NetworkServer::on_close, this, std::placeholders::_1));
-    m_endpoint.set_message_handler(std::bind(&NetworkServer::on_message, this, std::placeholders::_1, std::placeholders::_2));
+void NetworkServer::sendToClient(websocketpp::connection_hdl hdl, const std::string& message) {
+    try {
+        m_server.send(hdl, message, websocketpp::frame::opcode::text);
+    } catch (const websocketpp::exception& e) {
+        std::cout << "Send failed: " << e.what() << std::endl;
+    }
 }
 
 void NetworkServer::run(uint16_t port) {
-    m_endpoint.listen(port);
-    m_endpoint.start_accept();
+    m_server.listen(port);
+    m_server.start_accept();
     std::cout << "Server listening on port " << port << "..." << std::endl;
-    m_endpoint.run();
+    m_server.run(); 
 }
 
 void NetworkServer::on_open(websocketpp::connection_hdl hdl) {
-    std::cout << "New client connected!" << std::endl;
+    m_gameSession.addClient(hdl);
 }
 
 void NetworkServer::on_close(websocketpp::connection_hdl hdl) {
-    std::cout << "Client disconnected." << std::endl;
+    m_gameSession.removeClient(hdl);
 }
 
-void NetworkServer::on_message(websocketpp::connection_hdl hdl, message_ptr msg) {
-    std::cout << "Received message: " << msg->get_payload() << std::endl;
+void NetworkServer::on_message(websocketpp::connection_hdl hdl, server::message_ptr msg) {
+    std::string payload = msg->get_payload(); 
+
+    PlayerRole role = m_gameSession.getRole(hdl);
+    
+    bool success = m_controller.processCommand(payload, role);
+    
+    if (!success) {
+        std::cout << "[NetworkServer] Invalid command or unauthorized role." << std::endl;
+    }
 }

@@ -7,6 +7,8 @@ GameState& GameEngine::getGameState() {
 }
 
 bool GameEngine::requestMove(Position source, Position destination, long durationMs) {
+    std::lock_guard<std::mutex> lock(mtx);
+
     // 1. Application-level guard: Game Over, cooldown
     if (currentState.isGameOver) return false;
 
@@ -34,6 +36,8 @@ bool GameEngine::requestMove(Position source, Position destination, long duratio
 }
 
 void GameEngine::wait(long ms) {
+    std::lock_guard<std::mutex> lock(mtx);
+
     if (currentState.isGameOver) return;
 
     const long TICK_MS = 50; 
@@ -80,6 +84,7 @@ void GameEngine::wait(long ms) {
         elapsed += step;
     }
 }
+
 void GameEngine::resolvePhysicsTick() {
     auto& motions = arbiter.getActiveMotionsRef();
     long now = arbiter.getCurrentTime();
@@ -257,7 +262,10 @@ void GameEngine::processArrivals(const std::vector<Motion>& arrivals) {
 }
 
 GameSnapshot GameEngine::getSnapshot(std::optional<Position> selectedPos) const {
+    std::lock_guard<std::mutex> lock(mtx);
+
     GameSnapshot snap;
+    snap.serverTime = arbiter.getCurrentTime();
     snap.boardWidth = currentState.board.getWidth();
     snap.boardHeight = currentState.board.getHeight();
     snap.isGameOver = currentState.isGameOver;
@@ -289,6 +297,8 @@ GameSnapshot GameEngine::getSnapshot(std::optional<Position> selectedPos) const 
 }
 
 bool GameEngine::requestJump(Position pos) {
+    std::lock_guard<std::mutex> lock(mtx);
+
     // 1. guard: game is over
     if (currentState.isGameOver) return false;
 
@@ -312,6 +322,8 @@ bool GameEngine::requestJump(Position pos) {
 }
 
 void GameEngine::setupStandardBoard() {
+    std::lock_guard<std::mutex> lock(mtx);
+
     if (currentState.board.getWidth() != 8 || currentState.board.getHeight() != 8) return;
 
     int currentId = 1; 
@@ -332,7 +344,6 @@ void GameEngine::setupStandardBoard() {
     }
 }
 
-// Fixed missing class scope to prevent LNK errors
 void GameEngine::notifyMoveCompleted(const Piece& piece, Position source, Position dest, bool destinationCapture, long timeMs) {    
     for (auto* observer : observers) {
         observer->onMoveCompleted(piece, source, dest, destinationCapture, timeMs);

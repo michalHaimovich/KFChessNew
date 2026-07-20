@@ -7,11 +7,17 @@
 #include "motion.hpp"
 
 struct GameSnapshot {
+
+    long serverTime = 0;
+
     int boardWidth;
     int boardHeight;
+    
     std::vector<Piece> stationaryPieces;
     std::vector<Motion> activeMotions;
+    
     bool isGameOver;
+    
     std::optional<Piece> selectedPiece; 
     std::set<Position> highlightedCells; 
     std::optional<PieceColor> winner;
