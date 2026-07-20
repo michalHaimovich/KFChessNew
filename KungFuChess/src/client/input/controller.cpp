@@ -17,7 +17,6 @@ ControllerResult Controller::click(int x, int y) {
     }
     Position p = mappedCellOpt.value();
     
-    // בדיקה מול הלוח המקומי שיש ללקוח באותו רגע
     if (!localSnapshot.isInside(p)) {
         if (selectedCell.has_value()) {
             selectedCell = std::nullopt; 
@@ -49,7 +48,6 @@ ControllerResult Controller::click(int x, int y) {
             }
         }
 
-        // שינוי קריטי: במקום מנוע, הלקוח פשוט שולח בקשה לשרת!
         network.sendMove(selectedCell.value().col, selectedCell.value().row, p.col, p.row);
         
         selectedCell = std::nullopt; 
@@ -63,7 +61,7 @@ ControllerResult Controller::jump(int x, int y) {
         return ControllerResult::Ignored;
     }
 
-    // שליחת בקשת הקפיצה לשרת
     network.sendJump(mappedCellOpt.value().col, mappedCellOpt.value().row);
     return ControllerResult::JumpRequested;
 }
+

@@ -5,7 +5,6 @@
 DatabaseConnection::DatabaseConnection(const std::string& dbPath) : db(nullptr) {
     if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
         std::cerr << "Error opening database: " << sqlite3_errmsg(db) << std::endl;
-        // במערכת אמיתית נהוג לזרוק חריגה (Exception) כאן אם ה-DB חיוני לעליית השרת
     }
 }
 

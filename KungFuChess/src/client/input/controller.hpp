@@ -26,4 +26,6 @@ public:
     ControllerResult click(int x, int y);
     ControllerResult jump(int x, int y);
     std::optional<Position> getSelectedCell() const;
+
+    
 };

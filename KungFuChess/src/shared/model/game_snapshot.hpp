@@ -13,6 +13,9 @@ struct GameSnapshot {
     int boardWidth;
     int boardHeight;
     
+    std::string whitePlayerName = "Waiting...";
+    std::string blackPlayerName = "Waiting...";
+
     std::vector<Piece> stationaryPieces;
     std::vector<Motion> activeMotions;
     

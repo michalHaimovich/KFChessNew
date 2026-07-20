@@ -47,7 +47,8 @@ add_library(kungfu_server_core
     src/server/network/network_server.cpp 
     src/server/game/game_session.cpp
     src/server/game/server_controller.cpp
-
+    src/server/game/room.cpp         
+    src/server/game/room_manager.cpp
     third_party/sqlite/sqlite3.c
     src/server/db/database_connection.cpp
     src/server/db/repositories/user_repository.cpp

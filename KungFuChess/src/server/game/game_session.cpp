@@ -31,6 +31,10 @@ void GameSession::gameLoop()
         if (timeSinceLastBroadcast >= BROADCAST_INTERVAL_MS)
         {
             GameSnapshot snap = engine.getSnapshot();
+            
+            snap.whitePlayerName = m_whiteName;
+            snap.blackPlayerName = m_blackName;
+
             std::string stateStr = serializeSnapshot(snap);
             {
                 std::lock_guard<std::mutex> lock(playersMutex);
@@ -97,28 +101,29 @@ GameSession::~GameSession()
     }
 }
 
-PlayerRole GameSession::addClient(websocketpp::connection_hdl hdl)
+PlayerRole GameSession::addClient(websocketpp::connection_hdl hdl, const std::string& username)
 {
     std::lock_guard<std::mutex> lock(playersMutex);
-
     PlayerRole assignedRole;
 
     if (!whiteTaken)
     {
         assignedRole = PlayerRole::White;
         whiteTaken = true;
-        std::cout << "[GameSession] Client joined - Assigned as White Player." << std::endl;
+        m_whiteName = username;
+        std::cout << "[GameSession] Client joined - Assigned as White Player: " << username << std::endl;
     }
     else if (!blackTaken)
     {
         assignedRole = PlayerRole::Black;
         blackTaken = true;
-        std::cout << "[GameSession] Client joined - Assigned as Black Player." << std::endl;
+        m_blackName = username; 
+        std::cout << "[GameSession] Client joined - Assigned as Black Player: " << username << std::endl;
     }
     else
     {
         assignedRole = PlayerRole::Spectator;
-        std::cout << "[GameSession] Client joined - Assigned as Spectator." << std::endl;
+        std::cout << "[GameSession] Client joined - Assigned as Spectator: " << username << std::endl;
     }
 
     players[hdl] = assignedRole;
@@ -135,11 +140,13 @@ void GameSession::removeClient(websocketpp::connection_hdl hdl)
         if (it->second == PlayerRole::White)
         {
             whiteTaken = false;
+            m_whiteName = "Waiting..."; 
             std::cout << "[GameSession] White Player disconnected. Slot is open." << std::endl;
         }
         else if (it->second == PlayerRole::Black)
         {
             blackTaken = false;
+            m_blackName = "Waiting..."; 
             std::cout << "[GameSession] Black Player disconnected. Slot is open." << std::endl;
         }
         else
@@ -174,6 +181,8 @@ std::string GameSession::serializeSnapshot(const GameSnapshot &snap)
     j["boardWidth"] = snap.boardWidth;
     j["boardHeight"] = snap.boardHeight;
     j["isGameOver"] = snap.isGameOver;
+    j["whitePlayerName"] = snap.whitePlayerName;
+    j["blackPlayerName"] = snap.blackPlayerName;
 
     if (snap.isGameOver && snap.winner.has_value())
     {
@@ -225,3 +234,13 @@ std::string GameSession::serializeSnapshot(const GameSnapshot &snap)
 
     return j.dump();
 }
+
+void GameSession::broadcastMessage(const std::string& msg) {
+    std::lock_guard<std::mutex> lock(playersMutex);
+    for (const auto& pair : players) {
+        if (sendCallback) {
+            sendCallback(pair.first, msg);
+        }
+    }
+}
+

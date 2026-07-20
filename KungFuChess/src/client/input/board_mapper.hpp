@@ -14,4 +14,10 @@ public:
         int row = (y - startY) / cellSize;
         return Position{row, col};
     }
+
+    void updateLayout(int x, int y, int size) {
+    startX = x;
+    startY = y;
+    cellSize = size;
+    }
 };

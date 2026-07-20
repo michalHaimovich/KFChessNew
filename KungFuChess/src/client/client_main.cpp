@@ -15,6 +15,7 @@
 #include "view/renderer.hpp"
 #include "view/move_history_manager.hpp"
 #include "view/score_manager.hpp"
+#include "windows_login_dialog.hpp"
 
 using json = nlohmann::json;
 
@@ -37,18 +38,15 @@ int main()
 {
     try
     {
-        std::string username;
-        std::string password;
+        LoginResult userInput = WindowsLoginDialog::ShowDialog();
 
-        std::cout << "======================================\n";
-        std::cout << "      Welcome to Kung Fu Chess      \n";
-        std::cout << "======================================\n";
-        std::cout << "Please Login (Shell Mode):\n";
-        std::cout << "Username: ";
-        std::cin >> username;
-        std::cout << "Password: ";
-        std::cin >> password;
-        std::cout << "Connecting to server as " << username << "...\n";
+        if (!userInput.success)
+        {
+            std::cout << "User closed the launcher." << std::endl;
+            return 0;
+        }
+
+        std::cout << "Connecting to server as " << userInput.username << "...\n";
 
         int rows = 8;
         int cols = 8;
@@ -63,11 +61,18 @@ int main()
         std::atomic<long> timeOffset{0};
 
         NetworkClient network;
-        std::atomic<int> loginStatus{0}; 
+        
+        std::atomic<int> loginStatus{0};
         std::string loginErrorMessage = "";
         std::mutex loginMutex;
 
-        network.setOnMessageCallback([&localSnapshot, &snapshotMutex, &startTime, &timeOffset, &clientBus, &loginStatus, &loginErrorMessage, &loginMutex](const std::string &msg)
+        // משתנים חדשים למעקב אחרי סטטוס החדר
+        std::atomic<int> roomStatus{0}; 
+        std::string roomErrorMessage = "";
+        std::mutex roomMutex;
+
+        // הוספנו את משתני החדר לרשימת הלכידה
+        network.setOnMessageCallback([&localSnapshot, &snapshotMutex, &startTime, &timeOffset, &clientBus, &loginStatus, &loginErrorMessage, &loginMutex, &roomStatus, &roomErrorMessage, &roomMutex](const std::string &msg)
                                      {                                     
             try {
                 auto j = json::parse(msg);
@@ -82,14 +87,31 @@ int main()
                         loginErrorMessage = j.value("message", "Unknown error");
                         loginStatus = -1;
                         return;
+                    } 
+                    // טיפול בהודעות של יצירת/הצטרפות לחדר
+                    else if (type == "ROOM_SUCCESS") {
+                        roomStatus = 1;
+                        return;
+                    } else if (type == "ROOM_ERROR") {
+                        std::lock_guard<std::mutex> lock(roomMutex);
+                        roomErrorMessage = j.value("message", "Unknown error");
+                        roomStatus = -1;
+                        return;
                     }
                 }
+                
                 GameSnapshot newSnap;
                 
                 newSnap.serverTime = j.value("serverTime", 0LL);
                 newSnap.boardWidth = j.value("boardWidth", 8);
                 newSnap.boardHeight = j.value("boardHeight", 8);
                 newSnap.isGameOver = j.value("isGameOver", false);
+                if (j.contains("whitePlayerName")) {
+                    newSnap.whitePlayerName = j["whitePlayerName"];
+                }   
+                if (j.contains("blackPlayerName")) {
+                   newSnap.blackPlayerName = j["blackPlayerName"];
+                }
                 
                 if (newSnap.isGameOver && j.contains("winner")) {
                     newSnap.winner = (j["winner"] == "White") ? PieceColor::White : PieceColor::Black;
@@ -197,16 +219,23 @@ int main()
 
         json loginMsg;
         loginMsg["action"] = "LOGIN";
-        loginMsg["username"] = username;
-        loginMsg["password"] = password;
+        loginMsg["username"] = userInput.username;
+        loginMsg["password"] = userInput.password;
         network.send(loginMsg.dump());
 
+        json roomMsg;
+        roomMsg["action"] = userInput.action; // "CREATE_ROOM" or "JOIN_ROOM"
+        roomMsg["roomName"] = userInput.roomName;
+        network.send(roomMsg.dump());
+
         std::cout << "Authenticating..." << std::endl;
-        while (loginStatus.load() == 0) {
+        while (loginStatus.load() == 0)
+        {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
-        if (loginStatus.load() == -1) {
+        if (loginStatus.load() == -1)
+        {
             std::string errMsg;
             {
                 std::lock_guard<std::mutex> lock(loginMutex);
@@ -216,10 +245,36 @@ int main()
             std::cerr << " LOGIN FAILED: " << errMsg << "\n";
             std::cerr << "======================================\n";
             network.disconnect();
-            return -1; 
+            return -1;
         }
 
-        std::cout << "Login successful! Loading game board..." << std::endl;
+        std::cout << "Login successful! Waiting for room confirmation..." << std::endl;
+
+        // המתנה לאישור שהחדר נוצר או שנכנסנו לחדר קיים
+        while (roomStatus.load() == 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        if (roomStatus.load() == -1)
+        {
+            std::string errMsg;
+            {
+                std::lock_guard<std::mutex> lock(roomMutex);
+                errMsg = roomErrorMessage;
+            }
+            std::cerr << "======================================\n";
+            std::cerr << " ROOM ERROR: " << errMsg << "\n";
+            std::cerr << "======================================\n";
+            
+            // הקפצת חלונית שגיאה למשתמש
+            MessageBoxA(NULL, errMsg.c_str(), "Room Error", MB_ICONERROR | MB_OK);
+            
+            network.disconnect();
+            return -1;
+        }
+
+        std::cout << "Room joined successfully! Loading game board..." << std::endl;
 
         ScoreManager scoreManager(&clientBus);
         MoveHistoryManager historyManager(&clientBus);
@@ -230,15 +285,25 @@ int main()
         Controller controller(network, localSnapshot, mapper);
 
         std::string windowName = "Kung Fu Chess";
-        cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
+        cv::namedWindow(windowName, cv::WINDOW_NORMAL);
+        cv::resizeWindow(windowName, 1024, 720);
         cv::setMouseCallback(windowName, onMouse, &controller);
-
         long lastAbsoluteTime = 0;
 
         std::cout << "Starting Kung Fu Chess Client Loop..." << std::endl;
 
         while (true)
         {
+            cv::Rect windowRect = cv::getWindowImageRect(windowName);
+            if (windowRect.width > 0 && windowRect.height > 0)
+            {
+                if (windowRect.width != renderer.getWindowWidth() || windowRect.height != renderer.getWindowHeight())
+                {
+                    renderer.updateWindowSize(windowRect.width, windowRect.height);
+                    mapper.updateLayout(renderer.getBoardStartX(), renderer.getBoardStartY(), renderer.getCellSize());
+                }
+            }
+
             auto now = clock::now();
             long absoluteTime = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
             long dt = absoluteTime - lastAbsoluteTime;
