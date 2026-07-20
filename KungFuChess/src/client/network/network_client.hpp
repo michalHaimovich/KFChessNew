@@ -20,6 +20,12 @@ public:
 
     void setOnMessageCallback(std::function<void(const std::string&)> callback);
 
+    // Generic send function for JSON strings
+    void send(const std::string& message);
+    
+    //  Getter to check if connection is fully established
+    bool isConnected() const { return m_connected; }
+
 private:
     void on_open(websocketpp::connection_hdl hdl);
     void on_message(websocketpp::connection_hdl hdl, client::message_ptr msg);

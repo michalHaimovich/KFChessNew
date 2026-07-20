@@ -1,15 +1,18 @@
 #include "network_server.hpp"
 #include <iostream>
-#include <nlohmann/json.hpp> // NEW: Required to parse the login message
+#include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
-NetworkServer::NetworkServer() 
-    : m_gameSession([this](websocketpp::connection_hdl hdl, const std::string& msg) { 
-          this->sendToClient(hdl, msg); 
-      }), 
-      m_controller(m_gameSession.getEngine()) 
-{    
+NetworkServer::NetworkServer()
+    : m_gameSession([this](websocketpp::connection_hdl hdl, const std::string &msg)
+                    { this->sendToClient(hdl, msg); }),
+      m_controller(m_gameSession.getEngine())
+{
+    m_db = std::make_unique<DatabaseConnection>("kungfu_chess.db");
+    m_userRepo = std::make_unique<UserRepository>(*m_db);
+    m_userRepo->initializeTable();
+
     m_server.init_asio();
 
     m_server.set_open_handler(bind(&NetworkServer::on_open, this, std::placeholders::_1));
@@ -17,79 +20,116 @@ NetworkServer::NetworkServer()
     m_server.set_message_handler(bind(&NetworkServer::on_message, this, std::placeholders::_1, std::placeholders::_2));
 }
 
-void NetworkServer::sendToClient(websocketpp::connection_hdl hdl, const std::string& message) {
-    try {
+void NetworkServer::sendToClient(websocketpp::connection_hdl hdl, const std::string &message)
+{
+    try
+    {
         m_server.send(hdl, message, websocketpp::frame::opcode::text);
-    } catch (const websocketpp::exception& e) {
+    }
+    catch (const websocketpp::exception &e)
+    {
         std::cout << "Send failed: " << e.what() << std::endl;
     }
 }
 
-void NetworkServer::run(uint16_t port) {
+void NetworkServer::run(uint16_t port)
+{
     m_server.listen(port);
     m_server.start_accept();
     std::cout << "Server listening on port " << port << "..." << std::endl;
-    m_server.run(); 
+    m_server.run();
 }
 
-void NetworkServer::on_open(websocketpp::connection_hdl hdl) {
-    // NEW: Just create a new unauthenticated session. 
-    // Do NOT add to GameSession yet!
-    connectedClients[hdl] = ClientSession(); 
+void NetworkServer::on_open(websocketpp::connection_hdl hdl)
+{
+    connectedClients[hdl] = ClientSession();
     std::cout << "[NetworkServer] New client connected. Awaiting login." << std::endl;
 }
 
-void NetworkServer::on_close(websocketpp::connection_hdl hdl) {
-    // NEW: Clean up the client session from our map
+void NetworkServer::on_close(websocketpp::connection_hdl hdl)
+{
+    // Clean up the client session from our map
     connectedClients.erase(hdl);
-    
+
     // Also remove from the game session if they were already playing
     m_gameSession.removeClient(hdl);
     std::cout << "[NetworkServer] Client disconnected." << std::endl;
 }
 
-void NetworkServer::on_message(websocketpp::connection_hdl hdl, server::message_ptr msg) {
-    std::string payload = msg->get_payload(); 
-    auto& client = connectedClients[hdl];
+void NetworkServer::on_message(websocketpp::connection_hdl hdl, server::message_ptr msg)
+{
+    std::string payload = msg->get_payload();
+    auto &client = connectedClients[hdl];
 
-    // NEW: Gatekeeper - Check if the client is authenticated
-    if (!client.isAuthenticated) {
-        try {
+    if (client.state == ClientState::CONNECTED)
+    {
+        try
+        {
             auto j = json::parse(payload);
-            
-            if (j.value("action", "") == "LOGIN") {
+
+            if (j.value("action", "") == "LOGIN")
+            {
                 std::string user = j.value("username", "Guest");
                 std::string pass = j.value("password", "");
-                
-                // For now, accept any credentials (presentation only). 
-                // Future: This is exactly where you will query the Database!
-                std::cout << "[NetworkServer] User authenticated: " << user << std::endl;
-                
-                client.isAuthenticated = true;
-                client.username = user;
-                
-                // Now that they are authenticated, assign them to the game.
-                // The first will get White, the second Black, others Spectator.
-                m_gameSession.addClient(hdl);
-                
-                // Send a success acknowledgment back to the client
-                sendToClient(hdl, R"({"type": "LOGIN_SUCCESS"})");
-            } else {
+
+                auto existingUser = m_userRepo->getByUsername(user);
+                bool loginSuccess = false;
+
+                if (existingUser.has_value())
+                {
+                    if (existingUser->password == pass)
+                    {
+                        loginSuccess = true;
+                        client.rating = existingUser->rating;
+                        std::cout << "[NetworkServer] User authenticated: " << user << std::endl;
+                    }
+                    else
+                    {
+                        std::cout << "[NetworkServer] Invalid password for: " << user << std::endl;
+                        sendToClient(hdl, R"({"type": "LOGIN_ERROR", "message": "Invalid password"})");
+                    }
+                }
+                else
+                {
+                    User newUser(user, pass);
+                    if (m_userRepo->create(newUser))
+                    {
+                        loginSuccess = true;
+                        client.rating = newUser.rating;
+                        std::cout << "[NetworkServer] New user registered and authenticated: " << user << std::endl;
+                    }
+                    else
+                    {
+                        std::cout << "[NetworkServer] Failed to create user: " << user << std::endl;
+                        sendToClient(hdl, R"({"type": "LOGIN_ERROR", "message": "Database error"})");
+                    }
+                }
+
+                if (loginSuccess)
+                {
+                    client.state = ClientState::LOBBY;
+                    client.username = user;
+                    sendToClient(hdl, R"({"type": "LOGIN_SUCCESS"})");
+                }
+            }
+            else
+            {
                 std::cout << "[NetworkServer] Unauthenticated client sent non-login message." << std::endl;
             }
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception &e)
+        {
             std::cout << "[NetworkServer] Invalid JSON during login: " << e.what() << std::endl;
         }
-        
-        return; // Stop processing further until authenticated
+
+        return;
     }
 
-    // If we reach here, the client is fully authenticated.
-    // Route the gameplay messages (e.g., MOVE) to the game controller.
     PlayerRole role = m_gameSession.getRole(hdl);
     bool success = m_controller.processCommand(payload, role);
-    
-    if (!success) {
+
+    if (!success)
+    {
         std::cout << "[NetworkServer] Invalid command or unauthorized role." << std::endl;
     }
 }

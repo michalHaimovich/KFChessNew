@@ -5,15 +5,26 @@
 
 לעשות שתוצג הבחירה והמקומת האפשריים לה ללכת...
 
-שיוצג game over
-ומנצח...
+לתקן תצוגת חלון - רספונסיביות ושם שחקן
+
+לוגים
+
+
+
+אם משעמם לי{
+
+    לעשות רמות לפי ניקוד ולהציג
+
+    sound effects
+
+    לעשות גרירה בנוסף ללחיצות
+
+}
+
 
 
 לתצוגה של רמת הכיסוי:
 OpenCppCoverage.exe --sources C:\Users\micha\KungFooChessNew\KungFuChess --excluded_sources *doctest.h --excluded_sources *\tests\* --export_type html:coverage_report -- .\kungfu_chess_tests.exe
 
-
+למעבר להרצת הטסטים וחזרה:
 CMake: Select Launch Target
-
-
-026667140 8 

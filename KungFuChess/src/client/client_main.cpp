@@ -18,6 +18,8 @@
 
 using json = nlohmann::json;
 
+int ESC = 27;
+
 void onMouse(int event, int x, int y, int flags, void *userdata)
 {
     Controller *controller = static_cast<Controller *>(userdata);
@@ -61,11 +63,27 @@ int main()
         std::atomic<long> timeOffset{0};
 
         NetworkClient network;
+        std::atomic<int> loginStatus{0}; 
+        std::string loginErrorMessage = "";
+        std::mutex loginMutex;
 
-        network.setOnMessageCallback([&localSnapshot, &snapshotMutex, &startTime, &timeOffset, &clientBus](const std::string &msg)
+        network.setOnMessageCallback([&localSnapshot, &snapshotMutex, &startTime, &timeOffset, &clientBus, &loginStatus, &loginErrorMessage, &loginMutex](const std::string &msg)
                                      {                                     
             try {
                 auto j = json::parse(msg);
+                
+                if (j.contains("type")) {
+                    std::string type = j["type"];
+                    if (type == "LOGIN_SUCCESS") {
+                        loginStatus = 1;
+                        return; 
+                    } else if (type == "LOGIN_ERROR") {
+                        std::lock_guard<std::mutex> lock(loginMutex);
+                        loginErrorMessage = j.value("message", "Unknown error");
+                        loginStatus = -1;
+                        return;
+                    }
+                }
                 GameSnapshot newSnap;
                 
                 newSnap.serverTime = j.value("serverTime", 0LL);
@@ -171,11 +189,37 @@ int main()
             return -1;
         }
 
+        std::cout << "Waiting for server connection..." << std::endl;
+        while (!network.isConnected())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
         json loginMsg;
         loginMsg["action"] = "LOGIN";
         loginMsg["username"] = username;
         loginMsg["password"] = password;
         network.send(loginMsg.dump());
+
+        std::cout << "Authenticating..." << std::endl;
+        while (loginStatus.load() == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        if (loginStatus.load() == -1) {
+            std::string errMsg;
+            {
+                std::lock_guard<std::mutex> lock(loginMutex);
+                errMsg = loginErrorMessage;
+            }
+            std::cerr << "======================================\n";
+            std::cerr << " LOGIN FAILED: " << errMsg << "\n";
+            std::cerr << "======================================\n";
+            network.disconnect();
+            return -1; 
+        }
+
+        std::cout << "Login successful! Loading game board..." << std::endl;
 
         ScoreManager scoreManager(&clientBus);
         MoveHistoryManager historyManager(&clientBus);
@@ -218,7 +262,7 @@ int main()
             renderer.renderFrame(renderSnapshot, serverSyncedTime, dt);
 
             int key = cv::waitKey(1);
-            if (key == 27)
+            if (key == ESC)
                 break;
         }
 

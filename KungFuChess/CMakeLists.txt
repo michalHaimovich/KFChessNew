@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.15)
-project(KungFuChess CXX)
+project(KungFuChess C CXX)
 add_definitions(-DASIO_STANDALONE -D_WEBSOCKETPP_CPP11_STL_ -DASIO_ENABLE_OLD_SERVICES)
 
 # Use C++17 standard
@@ -12,6 +12,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include_directories(${CMAKE_SOURCE_DIR}/third_party/asio/include)
 
 include_directories(${CMAKE_SOURCE_DIR}/third_party)
+
+include_directories(${CMAKE_SOURCE_DIR}/third_party/sqlite)
 
 # OpenCV include and library directories (Moved to Client)
 include_directories(src/client/OpenCV/include)
@@ -45,7 +47,11 @@ add_library(kungfu_server_core
     src/server/network/network_server.cpp 
     src/server/game/game_session.cpp
     src/server/game/server_controller.cpp
-)
+
+    third_party/sqlite/sqlite3.c
+    src/server/db/database_connection.cpp
+    src/server/db/repositories/user_repository.cpp
+    )
 target_link_libraries(kungfu_server_core PRIVATE kungfu_shared)
 
 # רק ה-main נשאר פה, השאר עברו ל-core

@@ -65,3 +65,15 @@ void NetworkClient::sendJump(int toCol, int toRow) {
 void NetworkClient::setOnMessageCallback(std::function<void(const std::string&)> callback) {
     m_messageCallback = callback;
 }
+
+void NetworkClient::send(const std::string& message) {
+    if (!m_connected) {
+        std::cerr << "Cannot send message: Not connected to server." << std::endl;
+        return;
+    }
+    try {
+        m_client.send(m_hdl, message, websocketpp::frame::opcode::text);
+    } catch (const websocketpp::exception& e) {
+        std::cerr << "Send failed: " << e.what() << std::endl;
+    }
+}
