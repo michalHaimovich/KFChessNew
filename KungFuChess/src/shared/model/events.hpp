@@ -2,21 +2,24 @@
 #include "model/piece.hpp"
 #include "model/position.hpp"
 
-// Base class for all events
 struct Event {
     virtual ~Event() = default;
 };
 
-// Event fired when a piece is captured
 struct PieceCapturedEvent : public Event {
+    
     Piece capturedPiece;
+
+    PieceCapturedEvent(const Piece& p) : capturedPiece(p) {}
 };
 
-// Event fired when a piece successfully lands on a destination
 struct MoveCompletedEvent : public Event {
     Piece piece;
     Position source;
     Position dest;
     bool destinationCapture;
     long timeMs;
+
+    MoveCompletedEvent(const Piece& p, Position src, Position dst, bool capture, long time) 
+        : piece(p), source(src), dest(dst), destinationCapture(capture), timeMs(time) {}
 };

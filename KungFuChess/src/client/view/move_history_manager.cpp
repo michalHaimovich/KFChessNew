@@ -2,6 +2,26 @@
 #include <iomanip>
 #include <sstream>
 
+MoveHistoryManager::MoveHistoryManager(EventBus* bus) : pendingCapture(false) {
+    if (bus) {
+        bus->subscribe<MoveCompletedEvent>([this](const MoveCompletedEvent& event) {
+            std::string timeStr = this->formatTime(event.timeMs);
+            std::string moveStr = this->getPieceChar(event.piece.kind) + this->getCoord(event.source);
+
+            if (event.destinationCapture) {
+                moveStr += " x " + this->getCoord(event.dest);
+            } else {
+                moveStr += " -> " + this->getCoord(event.dest);
+            }
+
+            if (event.piece.color == PieceColor::White) {
+                this->whiteMoves.push_back({timeStr, moveStr});
+            } else {
+                this->blackMoves.push_back({timeStr, moveStr});
+            }
+        });
+    }
+}
 std::string MoveHistoryManager::formatTime(long ms) const {
     long totalSeconds = ms / 1000;
     long minutes = totalSeconds / 60;
@@ -30,23 +50,4 @@ std::string MoveHistoryManager::getCoord(Position pos) const {
     char file = 'a' + pos.col;      
     char rank = '8' - pos.row;    
     return std::string(1, file) + std::string(1, rank);
-}
-
-void MoveHistoryManager::onPieceCaptured(const Piece& capturedPiece) {}
-
-void MoveHistoryManager::onMoveCompleted(const Piece& piece, Position source, Position dest, bool destinationCapture, long timeMs) {
-    std::string timeStr = formatTime(timeMs);
-    std::string moveStr = getPieceChar(piece.kind) + getCoord(source);
-
-    if (destinationCapture) {
-        moveStr += " x " + getCoord(dest);
-    } else {
-        moveStr += " -> " + getCoord(dest);
-    }
-
-    if (piece.color == PieceColor::White) {
-        whiteMoves.push_back({timeStr, moveStr});
-    } else {
-        blackMoves.push_back({timeStr, moveStr});
-    }
 }

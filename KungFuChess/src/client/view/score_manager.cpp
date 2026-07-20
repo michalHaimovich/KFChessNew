@@ -1,5 +1,22 @@
 #include "score_manager.hpp"
 
+#include "score_manager.hpp"
+
+ScoreManager::ScoreManager(EventBus* bus) : whiteScore(0), blackScore(0) {
+    if (bus) {
+        // Subscribe to the PieceCapturedEvent using a lambda function
+        bus->subscribe<PieceCapturedEvent>([this](const PieceCapturedEvent& event) {
+            int value = this->getPieceValue(event.capturedPiece.kind);
+            
+            if (event.capturedPiece.color == PieceColor::Black) {
+                this->whiteScore += value; 
+            } else {
+                this->blackScore += value;
+            }
+        });
+    }
+}
+
 int ScoreManager::getPieceValue(PieceKind kind) const {
     switch (kind) {
         case PieceKind::Pawn:   return 1;
@@ -10,17 +27,4 @@ int ScoreManager::getPieceValue(PieceKind kind) const {
         case PieceKind::King:   return 0; 
         default: return 0;
     }
-}
-
-void ScoreManager::onPieceCaptured(const Piece& capturedPiece) {
-    int value = getPieceValue(capturedPiece.kind);
-    
-    if (capturedPiece.color == PieceColor::Black) {
-        whiteScore += value; 
-    } else {
-        blackScore += value;
-    }
-}
-
-void ScoreManager::onMoveCompleted(const Piece& piece, Position source, Position dest,  bool destinationCapture, long timeMs) {
 }

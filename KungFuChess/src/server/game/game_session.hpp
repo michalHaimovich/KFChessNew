@@ -11,6 +11,7 @@
 #include <mutex>
 #include <shared_mutex>
 
+#include "model/event_bus.hpp"
 #include "engine/game_engine.hpp"
 
 using json = nlohmann::json;
@@ -36,6 +37,10 @@ private:
     std::function<void(websocketpp::connection_hdl, const std::string&)> sendCallback;
 
     mutable std::mutex playersMutex;
+
+    EventBus serverBus;
+    std::vector<json> pendingEvents;
+    mutable std::mutex eventsMutex;
 
     void gameLoop();
     

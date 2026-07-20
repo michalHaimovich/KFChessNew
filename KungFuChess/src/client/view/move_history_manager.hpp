@@ -1,14 +1,14 @@
 #pragma once
 #include <vector>
 #include <string>
-#include "model/game_observer.hpp"
+#include "model/event_bus.hpp"
 
 struct MoveRecord {
     std::string timeStr;
     std::string moveStr;
 };
 
-class MoveHistoryManager : public GameObserver {
+class MoveHistoryManager { 
 private:
     std::vector<MoveRecord> whiteMoves;
     std::vector<MoveRecord> blackMoves;
@@ -19,10 +19,7 @@ private:
     std::string getCoord(Position pos) const;
 
 public:
-    MoveHistoryManager() : pendingCapture(false) {}
-
-    void onPieceCaptured(const Piece& capturedPiece) override;
-    void onMoveCompleted(const Piece& piece, Position source, Position dest, bool destinationCapture, long timeMs) override;
+    MoveHistoryManager(EventBus* bus);
     const std::vector<MoveRecord>& getWhiteMoves() const { return whiteMoves; }
     const std::vector<MoveRecord>& getBlackMoves() const { return blackMoves; }
 };

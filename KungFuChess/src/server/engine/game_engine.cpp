@@ -345,13 +345,16 @@ void GameEngine::setupStandardBoard() {
 }
 
 void GameEngine::notifyMoveCompleted(const Piece& piece, Position source, Position dest, bool destinationCapture, long timeMs) {    
-    for (auto* observer : observers) {
-        observer->onMoveCompleted(piece, source, dest, destinationCapture, timeMs);
-    }
+    if (!eventBus) return;
+    
+   MoveCompletedEvent event(piece, source, dest, destinationCapture, timeMs);
+    eventBus->publish(event);
 }
 
 void GameEngine::notifyPieceCaptured(const Piece& capturedPiece) {
-    for (auto* observer : observers) {
-        observer->onPieceCaptured(capturedPiece);
-    }
+    if (!eventBus) return;
+    
+    PieceCapturedEvent event(capturedPiece);
+    
+    eventBus->publish(event);
 }

@@ -51,10 +51,38 @@ void GameSession::gameLoop()
     std::cout << "[GameSession] Time thread stopped." << std::endl;
 }
 
-// Initialize session and store the send callback
 GameSession::GameSession(std::function<void(websocketpp::connection_hdl, const std::string &)> sendCb)
     : engine(8, 8), whiteTaken(false), blackTaken(false), isRunning(true), sendCallback(sendCb)
 {
+    engine.setEventBus(&serverBus);
+
+    serverBus.subscribe<PieceCapturedEvent>([this](const PieceCapturedEvent& e) {
+        json j;
+        j["type"] = "PieceCapturedEvent";
+        j["pieceId"] = e.capturedPiece.id;
+        j["pieceColor"] = (e.capturedPiece.color == PieceColor::White) ? "White" : "Black";
+        j["pieceKind"] = static_cast<int>(e.capturedPiece.kind);
+        
+        std::lock_guard<std::mutex> lock(eventsMutex);
+        pendingEvents.push_back(j);
+    });
+
+    serverBus.subscribe<MoveCompletedEvent>([this](const MoveCompletedEvent& e) {
+        json j;
+        j["type"] = "MoveCompletedEvent";
+        j["pieceId"] = e.piece.id;
+        j["pieceColor"] = (e.piece.color == PieceColor::White) ? "White" : "Black";
+        j["pieceKind"] = static_cast<int>(e.piece.kind);
+        j["sourceRow"] = e.source.row;
+        j["sourceCol"] = e.source.col;
+        j["destRow"] = e.dest.row;
+        j["destCol"] = e.dest.col;
+        j["destinationCapture"] = e.destinationCapture;
+        j["timeMs"] = e.timeMs;
+
+        std::lock_guard<std::mutex> lock(eventsMutex);
+        pendingEvents.push_back(j);
+    });
 
     engine.setupStandardBoard();
     timeThread = std::thread(&GameSession::gameLoop, this);
@@ -184,5 +212,16 @@ std::string GameSession::serializeSnapshot(const GameSnapshot &snap)
 
         j["activeMotions"].push_back(mJson);
     }
+
+    j["events"] = json::array();
+    {
+        std::lock_guard<std::mutex> lock(eventsMutex);
+        for (const auto &eJson : pendingEvents)
+        {
+            j["events"].push_back(eJson);
+        }
+        pendingEvents.clear();
+    }
+
     return j.dump();
 }

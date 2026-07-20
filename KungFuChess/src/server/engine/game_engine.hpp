@@ -5,10 +5,10 @@
 #include <set>
 #include <mutex>
 
+#include "model/event_bus.hpp"
 #include "model/game_state.hpp"
 #include "rules/rule_engine.hpp"
 #include "realtime/real_time_arbiter.hpp"
-#include "model/game_observer.hpp" 
 #include "model/game_snapshot.hpp"
 
 
@@ -27,12 +27,13 @@ private:
     void processArrivals(const std::vector<Motion>& arrivals);
     void resolvePhysicsTick();
 
-    std::vector<GameObserver*> observers;
 
     mutable std::mutex mtx;
     
     void notifyMoveCompleted(const Piece& piece, Position source, Position dest, bool destinationCapture, long timeMs);    
     void notifyPieceCaptured(const Piece& capturedPiece);
+
+    EventBus* eventBus = nullptr;
 
 public:
     GameEngine(int width, int height);
@@ -42,11 +43,9 @@ public:
     GameState& getGameState();
     bool requestMove(Position source, Position destination, long durationMs = 1000);
     void wait(long ms);
+    void setEventBus(EventBus* bus) { eventBus = bus; }
 
     // UPDATED: Now accepts an optional selected position from the controller
     GameSnapshot getSnapshot(std::optional<Position> selectedPos = std::nullopt) const;
 
-    void addObserver(GameObserver* observer) {
-        observers.push_back(observer);
-    }
 };
