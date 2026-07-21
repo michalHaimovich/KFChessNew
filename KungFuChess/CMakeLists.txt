@@ -83,6 +83,7 @@ add_library(kungfu_client_core
     src/client/view/move_history_manager.cpp
     src/client/view/score_manager.cpp
     src/client/network/network_client.cpp
+    src/client/game_application.cpp
 )
 
 target_link_libraries(kungfu_client_core PUBLIC opencv_world451d)

@@ -4,15 +4,18 @@
 #include <filesystem>
 #include <iostream>
 
+constexpr int MS_PER_SECOND = 1000;
+constexpr int DEFAULT_FPS = 6;
+
 AnimationData::AnimationData(const std::string& directoryPath, int targetSize) 
-    : msPerFrame(1000), isLoop(false) {
+    : msPerFrame(MS_PER_SECOND), isLoop(false) {
     loadConfig(directoryPath + "/config.json");
     loadFrames(directoryPath, targetSize);
 }
 
 void AnimationData::loadConfig(const std::string& configPath) {
     std::ifstream file(configPath);
-    int framesPerSec = 6;
+    int framesPerSec = DEFAULT_FPS;
     isLoop = true;
     
     if (file.is_open()) {
@@ -39,7 +42,7 @@ void AnimationData::loadConfig(const std::string& configPath) {
         }
     }
     
-    msPerFrame = 1000 / (framesPerSec > 0 ? framesPerSec : 1);
+    msPerFrame = MS_PER_SECOND / (framesPerSec > 0 ? framesPerSec : 1);
 }
 
 void AnimationData::loadFrames(const std::string& dirPath, int targetSize) {
