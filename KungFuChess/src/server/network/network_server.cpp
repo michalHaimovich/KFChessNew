@@ -1,11 +1,13 @@
-#include <iostream>
-#include <nlohmann/json.hpp>
 
-#include "game/server_controller.hpp"
-#include "game/game_session.hpp"
 #include "network_server.hpp"
 
 using json = nlohmann::json;
+
+namespace
+{
+    constexpr int MAX_ELO_DIFFERENCE = 100;
+    constexpr int MATCHMAKING_TIMEOUT_SEC = 60;
+}
 
 NetworkServer::NetworkServer()
 {
@@ -17,8 +19,17 @@ NetworkServer::NetworkServer()
     m_userRepo = std::make_unique<UserRepository>(*m_db);
     m_userRepo->initializeTable();
 
-    m_server.init_asio();
+    m_matchmaker = std::make_unique<Matchmaker>(
+        MAX_ELO_DIFFERENCE,
+        MATCHMAKING_TIMEOUT_SEC,
+        [this](auto hdl1, auto hdl2)
+        { this->onMatchFound(hdl1, hdl2); },
+        [this](auto hdl)
+        { this->onMatchTimeout(hdl); });
 
+    m_authHandler = std::make_unique<AuthHandler>(*m_userRepo);
+    m_lobbyHandler = std::make_unique<LobbyHandler>(*m_roomManager, *m_matchmaker);
+    m_server.init_asio();
     m_server.set_open_handler(bind(&NetworkServer::on_open, this, std::placeholders::_1));
     m_server.set_close_handler(bind(&NetworkServer::on_close, this, std::placeholders::_1));
     m_server.set_message_handler(bind(&NetworkServer::on_message, this, std::placeholders::_1, std::placeholders::_2));
@@ -64,13 +75,7 @@ void NetworkServer::on_close(websocketpp::connection_hdl hdl)
             auto room = m_roomManager->getRoom(roomId);
             if (room)
             {
-                PlayerRole role = room->getSession()->getRole(hdl);
-                
-                room->removePlayer(hdl);
-                
-                if (role == PlayerRole::White || role == PlayerRole::Black) {
-                    room->startGracePeriod(hdl, role);
-                }
+                room->handlePlayerDisconnect(hdl);
             }
         }
     }
@@ -83,208 +88,126 @@ void NetworkServer::on_message(websocketpp::connection_hdl hdl, server::message_
     std::string payload = msg->get_payload();
     auto &client = connectedClients[hdl];
 
-    if (client.state == ClientState::IN_ROOM)
+    try
     {
-        auto room = m_roomManager->getRoom(client.roomId);
-        if (room)
+        switch (client.state)
         {
-            PlayerRole role = room->getSession()->getRole(hdl);
-            ServerController controller(room->getSession()->getEngine());
 
-            bool success = controller.processCommand(payload, role);
-            if (!success)
-            {
-                std::cout << "[NetworkServer] Invalid game command or unauthorized role: " << payload << std::endl;
-            }
-        }
-        return; 
-    }
-
-    if (client.state == ClientState::CONNECTED)
-    {
-        try
+        case ClientState::CONNECTED:
         {
-            auto j = json::parse(payload);
-            if (j.value("action", "") == "LOGIN")
+            auto jOpt = parseJsonSafe(payload);
+            if (!jOpt.has_value())
+                return;
+
+            if (jOpt.value().value("action", "") == "LOGIN")
             {
-                std::string user = j.value("username", "Guest");
-                std::string pass = j.value("password", "");
-
-                auto existingUser = m_userRepo->getByUsername(user);
-                bool loginSuccess = false;
-
-                if (existingUser.has_value())
+                std::string errorMsg;
+                if (m_authHandler->handleLogin(jOpt.value(), client, errorMsg))
                 {
-                    if (existingUser->password == pass)
-                    {
-                        loginSuccess = true;
-                        client.rating = existingUser->rating;
-                        std::cout << "[NetworkServer] User authenticated: " << user << std::endl;
-                    }
-                    else
-                    {
-                        std::cout << "[NetworkServer] Invalid password for: " << user << std::endl;
-                        sendToClient(hdl, R"({"type": "LOGIN_ERROR", "message": "Invalid password"})");
-                    }
-                }
-                else
-                {
-                    User newUser(user, pass);
-                    if (m_userRepo->create(newUser))
-                    {
-                        loginSuccess = true;
-                        client.rating = newUser.rating;
-                        std::cout << "[NetworkServer] New user registered and authenticated: " << user << std::endl;
-                    }
-                    else
-                    {
-                        std::cout << "[NetworkServer] Failed to create user: " << user << std::endl;
-                        sendToClient(hdl, R"({"type": "LOGIN_ERROR", "message": "Database error"})");
-                    }
-                }
-
-                if (loginSuccess)
-                {
-                    client.state = ClientState::LOBBY;
-                    client.username = user;
                     sendToClient(hdl, R"({"type": "LOGIN_SUCCESS"})");
                 }
+                else
+                {
+                    json errorJson = {{"type", "LOGIN_ERROR"}, {"message", errorMsg}};
+                    sendToClient(hdl, errorJson.dump());
+                }
             }
-            else
-            {
-                std::cout << "[NetworkServer] Unauthenticated client sent non-login message." << std::endl;
-            }
+            break;
         }
-        catch (const std::exception &e)
+
+        case ClientState::LOBBY:
         {
-            std::cout << "[NetworkServer] Invalid JSON during login: " << e.what() << std::endl;
+            auto jOpt = parseJsonSafe(payload);
+            if (!jOpt.has_value())
+                return;
+
+            std::string response = m_lobbyHandler->handleMessage(jOpt.value(), client, hdl);
+            if (!response.empty())
+            {
+                sendToClient(hdl, response);
+            }
+            break;
         }
-        return;
+
+        case ClientState::IN_QUEUE:
+        {
+            break;
+        }
+
+        case ClientState::IN_ROOM:
+        {
+            auto room = m_roomManager->getRoom(client.roomId);
+            if (room)
+            {
+                PlayerRole role = room->getSession()->getRole(hdl);
+                GameActionHandler actionHandler(room->getSession()->getEngine());
+
+                if (!actionHandler.processCommand(payload, role))
+                {
+                    std::cout << "[NetworkServer] Invalid game command: " << payload << std::endl;
+                }
+            }
+            break;
+        }
+        }
     }
-
-    if (client.state == ClientState::LOBBY)
+    catch (const std::exception &e)
     {
-        try
-        {
-            auto j = json::parse(payload);
-            std::string action = j.value("action", "");
-
-            if (action == "CREATE_ROOM")
-            {
-                std::string roomName = j.value("roomName", "");
-                if (m_roomManager->createRoom(roomName))
-                {
-                    client.roomId = roomName;
-                    client.state = ClientState::IN_ROOM;
-
-                    auto room = m_roomManager->getRoom(roomName);
-                    room->addPlayer(hdl, client.username);
-
-                    sendToClient(hdl, R"({"type": "ROOM_SUCCESS", "message": "Room created"})");
-                    std::cout << "[NetworkServer] Room created: " << roomName << std::endl;
-                }
-                else
-                {
-                    sendToClient(hdl, R"({"type": "ROOM_ERROR", "message": "Room name already exists"})");
-                }
-            }
-            else if (action == "JOIN_ROOM")
-            {
-                std::string roomName = j.value("roomName", "");
-                auto room = m_roomManager->getRoom(roomName);
-                if (room)
-                {
-                    client.roomId = roomName;
-                    client.state = ClientState::IN_ROOM;
-
-                    room->addPlayer(hdl, client.username);
-
-                    sendToClient(hdl, R"({"type": "ROOM_SUCCESS", "message": "Joined room"})");
-                    std::cout << "[NetworkServer] Client joined room: " << roomName << std::endl;
-                }
-                else
-                {
-                    sendToClient(hdl, R"({"type": "ROOM_ERROR", "message": "Room not found"})");
-                }
-            }
-            else if (action == "FIND_MATCH")
-            {
-                client.state = ClientState::IN_QUEUE;
-                client.queueStartTime = std::chrono::steady_clock::now();
-                std::cout << "[NetworkServer] Client entered matchmaking queue: " << client.username << " (Rating: " << client.rating << ")" << std::endl;
-            }
-            else
-            {
-                std::cout << "[NetworkServer] Unknown lobby action: " << action << std::endl;
-            }
-        }
-        catch (const std::exception &e)
-        {
-            std::cout << "[NetworkServer] Invalid JSON in Lobby: " << e.what() << std::endl;
-        }
+        std::cout << "[NetworkServer] Unhandled exception: " << e.what() << std::endl;
+        sendToClient(hdl, R"({"type": "ERROR", "message": "Internal server error"})");
     }
 }
 
 void NetworkServer::start_timer()
 {
-    m_server.set_timer(1000, [this](websocketpp::lib::error_code const & ec) {
-        if (ec) {
-            return; 
-        }
-
-        m_roomManager->checkAllRoomsForTimeouts();
-
-        auto now = std::chrono::steady_clock::now();
-        std::vector<websocketpp::connection_hdl> queueClients;
-
-        for (auto& pair : connectedClients) {
-            if (pair.second.state == ClientState::IN_QUEUE) {
-                auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - pair.second.queueStartTime).count();
-                
-                if (duration >= 60) {
-                    pair.second.state = ClientState::LOBBY;
-                    sendToClient(pair.first, R"({"type": "MATCH_ERROR", "message": "Could not find a match within 1 minute."})");
-                    std::cout << "[NetworkServer] Matchmaking timeout for: " << pair.second.username << std::endl;
-                } else {
-                    queueClients.push_back(pair.first);
-                }
+    m_server.set_timer(1000, [this](websocketpp::lib::error_code const &ec)
+                       {
+        if (!ec) {
+            m_roomManager->checkAllRoomsForTimeouts();
+            if (m_matchmaker) {
+                m_matchmaker->processQueue(); 
             }
-        }
+            this->start_timer();
+        } });
+}
 
-        for (size_t i = 0; i < queueClients.size(); ++i) {
-            auto hdl1 = queueClients[i];
-            if (connectedClients[hdl1].state != ClientState::IN_QUEUE) continue;
+std::optional<json> NetworkServer::parseJsonSafe(const std::string &payload)
+{
+    try
+    {
+        return json::parse(payload);
+    }
+    catch (const std::exception &e)
+    {
+        // LOG_MSG("JSON Parse Error: " + std::string(e.what()));
+        return std::nullopt;
+    }
+}
 
-            for (size_t j = i + 1; j < queueClients.size(); ++j) {
-                auto hdl2 = queueClients[j];
-                if (connectedClients[hdl2].state != ClientState::IN_QUEUE) continue;
+void NetworkServer::onMatchFound(websocketpp::connection_hdl hdl1, websocketpp::connection_hdl hdl2)
+{
+    auto &client1 = connectedClients[hdl1];
+    auto &client2 = connectedClients[hdl2];
+    std::string roomName = "Ranked_" + client1.username + "_vs_" + client2.username;
 
-                int rating1 = connectedClients[hdl1].rating;
-                int rating2 = connectedClients[hdl2].rating;
+    if (m_roomManager->createRoom(roomName))
+    {
+        auto room = m_roomManager->getRoom(roomName);
 
-                if (std::abs(rating1 - rating2) <= 100) {
-                    std::string newRoomName = "Ranked_" + connectedClients[hdl1].username + "_vs_" + connectedClients[hdl2].username;
-                    
-                    if (m_roomManager->createRoom(newRoomName)) {
-                        auto room = m_roomManager->getRoom(newRoomName);
-                        
-                        connectedClients[hdl1].roomId = newRoomName;
-                        connectedClients[hdl1].state = ClientState::IN_ROOM;
-                        room->addPlayer(hdl1, connectedClients[hdl1].username);
-                        sendToClient(hdl1, R"({"type": "ROOM_SUCCESS", "message": "Match found!"})");
-                        
-                        connectedClients[hdl2].roomId = newRoomName;
-                        connectedClients[hdl2].state = ClientState::IN_ROOM;
-                        room->addPlayer(hdl2, connectedClients[hdl2].username);
-                        sendToClient(hdl2, R"({"type": "ROOM_SUCCESS", "message": "Match found!"})");
+        client1.roomId = roomName;
+        client1.state = ClientState::IN_ROOM;
+        room->addPlayer(hdl1, client1.username);
+        sendToClient(hdl1, R"({"type": "ROOM_SUCCESS", "message": "Match found!"})");
 
-                        std::cout << "[NetworkServer] Match created: " << newRoomName << " (" << connectedClients[hdl1].username << " vs " << connectedClients[hdl2].username << ")" << std::endl;
-                    }
-                    break; 
-                }
-            }
-        }
+        client2.roomId = roomName;
+        client2.state = ClientState::IN_ROOM;
+        room->addPlayer(hdl2, client2.username);
+        sendToClient(hdl2, R"({"type": "ROOM_SUCCESS", "message": "Match found!"})");
+    }
+}
 
-        this->start_timer(); 
-    });
+void NetworkServer::onMatchTimeout(websocketpp::connection_hdl hdl)
+{
+    connectedClients[hdl].state = ClientState::LOBBY;
+    sendToClient(hdl, R"({"type": "MATCH_ERROR", "message": "Could not find a match within 1 minute."})");
 }

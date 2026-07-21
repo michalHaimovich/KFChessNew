@@ -5,27 +5,20 @@
 #include <string>
 #include <memory>
 #include <chrono>
+#include <iostream>
+#include <nlohmann/json.hpp>
 
+
+#include "handelers/auth_handler.hpp"
+#include "handelers/lobby_handler.hpp"
+#include "handelers/game_action_handler.hpp"
+#include "matchmaker.hpp"
 #include "db/database_connection.hpp"       
 #include "db/repositories/user_repository.hpp"
 #include "game/room_manager.hpp"
+#include "client_session.hpp"
 
 typedef websocketpp::server<websocketpp::config::asio> server;
-
-enum class ClientState {
-    CONNECTED,   
-    LOBBY,       
-    IN_QUEUE,     
-    IN_ROOM       
-};
-
-struct ClientSession {
-    ClientState state = ClientState::CONNECTED; 
-    std::string username = "";
-    int rating = 1200;      
-    std::string roomId = ""; 
-    std::chrono::steady_clock::time_point queueStartTime;
-};
 
 class NetworkServer {
 private:
@@ -38,9 +31,18 @@ private:
     std::unique_ptr<DatabaseConnection> m_db;
     std::unique_ptr<UserRepository> m_userRepo;
 
+    std::optional<json> parseJsonSafe(const std::string& payload);
+
+    std::unique_ptr<Matchmaker> m_matchmaker;
+    std::unique_ptr<AuthHandler> m_authHandler;
+    std::unique_ptr<LobbyHandler> m_lobbyHandler;
+
     void start_timer();
 
     void sendToClient(websocketpp::connection_hdl hdl, const std::string& message);
+
+    void onMatchFound(websocketpp::connection_hdl hdl1, websocketpp::connection_hdl hdl2);
+    void onMatchTimeout(websocketpp::connection_hdl hdl);
 
 public:
     NetworkServer();

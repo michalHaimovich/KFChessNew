@@ -52,11 +52,15 @@ add_library(kungfu_server_core
     third_party/sqlite/sqlite3.c
     src/server/db/database_connection.cpp
     src/server/db/repositories/user_repository.cpp
+    src/server/network/handelers/auth_handler.cpp
+    src/server/network/handelers/lobby_handler.cpp
+    src/server/network/handelers/game_action_handler.cpp
+    src/server/network/matchmaker.cpp
     )
 target_link_libraries(kungfu_server_core PRIVATE kungfu_shared)
 
-# רק ה-main נשאר פה, השאר עברו ל-core
 add_executable(kungfu_server_app src/server/server_main.cpp)
+
 target_link_libraries(kungfu_server_app PRIVATE kungfu_server_core)
 
 if(WIN32)

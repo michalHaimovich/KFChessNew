@@ -33,6 +33,10 @@ private:
     void notifyMoveCompleted(const Piece& piece, Position source, Position dest, bool destinationCapture, long timeMs);    
     void notifyPieceCaptured(const Piece& capturedPiece);
 
+    //help to resolve ticks
+    void checkAirToGroundCollisions(long now);
+    void checkMidAirCollisions(long now);
+
     EventBus* eventBus = nullptr;
 
 public:

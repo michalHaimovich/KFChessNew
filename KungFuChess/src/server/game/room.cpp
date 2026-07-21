@@ -54,3 +54,13 @@ bool Room::checkAutoResign() {
     
     return duration >= 20; 
 }
+
+void Room::handlePlayerDisconnect(websocketpp::connection_hdl hdl) {
+    PlayerRole role = m_gameSession->getRole(hdl);
+    m_gameSession->removeClient(hdl);
+    
+    if (role == PlayerRole::White || role == PlayerRole::Black) {
+        startGracePeriod(hdl, role);
+    }
+}
+

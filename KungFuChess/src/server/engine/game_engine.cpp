@@ -1,5 +1,9 @@
 ﻿#include "engine/game_engine.hpp"
 
+namespace {
+    constexpr long PHYSICS_TICK_MS = 50;
+}
+
 GameEngine::GameEngine(int width, int height) : currentState(width, height) {} 
 
 GameState& GameEngine::getGameState() {
@@ -40,11 +44,10 @@ void GameEngine::wait(long ms) {
 
     if (currentState.isGameOver) return;
 
-    const long TICK_MS = 50; 
     long elapsed = 0;
 
     while (elapsed < ms) {
-        long step = std::min(TICK_MS, ms - elapsed);
+        long step = std::min(PHYSICS_TICK_MS, ms - elapsed);
         
         arbiter.advanceTime(step);
         resolvePhysicsTick();
@@ -86,8 +89,14 @@ void GameEngine::wait(long ms) {
 }
 
 void GameEngine::resolvePhysicsTick() {
-    auto& motions = arbiter.getActiveMotionsRef();
     long now = arbiter.getCurrentTime();
+    
+    checkAirToGroundCollisions(now);
+    checkMidAirCollisions(now);
+}
+
+void GameEngine::checkAirToGroundCollisions(long now) {
+    auto& motions = arbiter.getActiveMotionsRef();
 
     for (size_t i = 0; i < motions.size(); ++i) {
         if (motions[i].isDead) continue;
@@ -95,7 +104,7 @@ void GameEngine::resolvePhysicsTick() {
         if (motions[i].type == MotionType::Jump || motions[i].piece.kind == PieceKind::Knight) continue;
 
         Position pos = motions[i].getCurrentCell(now);
-        Position prevPos = motions[i].getCurrentCell(now - 50);
+        Position prevPos = motions[i].getCurrentCell(now - PHYSICS_TICK_MS);
 
         if (pos != motions[i].destination && pos != motions[i].source) {
             auto stationaryOpt = currentState.board.getPiece(pos);
@@ -108,7 +117,6 @@ void GameEngine::resolvePhysicsTick() {
                     
                     if (ruleEngine.isFatalDeath(stationaryPiece.kind)) {
                         currentState.isGameOver = true;
-                        // NEW: Motion piece killed a fatal stationary piece
                         currentState.winner = motions[i].piece.color;
                     }
                     
@@ -123,6 +131,11 @@ void GameEngine::resolvePhysicsTick() {
             }
         }
     }
+}
+
+void GameEngine::checkMidAirCollisions(long now) {
+    auto& motions = arbiter.getActiveMotionsRef();
+
     for (size_t i = 0; i < motions.size(); ++i) {
         if (motions[i].isDead) continue; 
 
@@ -132,8 +145,8 @@ void GameEngine::resolvePhysicsTick() {
             Position pos1 = motions[i].getCurrentCell(now);
             Position pos2 = motions[j].getCurrentCell(now);
 
-            Position prevPos1 = motions[i].getCurrentCell(now - 50); 
-            Position prevPos2 = motions[j].getCurrentCell(now - 50);
+            Position prevPos1 = motions[i].getCurrentCell(now - PHYSICS_TICK_MS); 
+            Position prevPos2 = motions[j].getCurrentCell(now - PHYSICS_TICK_MS);
 
             if (pos1 == pos2 || (pos1 == prevPos2 && pos2 == prevPos1)) {
                 Motion& m1 = motions[i];
@@ -149,7 +162,6 @@ void GameEngine::resolvePhysicsTick() {
                         walker.isDead = true; 
                         notifyPieceCaptured(walker.piece);
 
-                        // NEW: Mid-air jump kill
                         if (ruleEngine.isFatalDeath(walker.piece.kind)) {
                             currentState.isGameOver = true;
                             currentState.winner = jumper.piece.color;
@@ -157,7 +169,7 @@ void GameEngine::resolvePhysicsTick() {
 
                     } else if (walker.piece.kind != PieceKind::Knight) {
                         walker.arrivalTime = now; 
-                        walker.destination = walker.getCurrentCell(now - 50);
+                        walker.destination = walker.getCurrentCell(now - PHYSICS_TICK_MS);
                     }
                     continue; 
                 }
@@ -173,14 +185,14 @@ void GameEngine::resolvePhysicsTick() {
                         notifyPieceCaptured(m2.piece);
                         if (ruleEngine.isFatalDeath(m2.piece.kind)) {
                             currentState.isGameOver = true;
-                            currentState.winner = m1.piece.color; // NEW
+                            currentState.winner = m1.piece.color;
                         }
                     } else if (m2.startTime < m1.startTime) {
                         m1.isDead = true;
                         notifyPieceCaptured(m1.piece);
                         if (ruleEngine.isFatalDeath(m1.piece.kind)) {
                             currentState.isGameOver = true;
-                            currentState.winner = m2.piece.color; // NEW
+                            currentState.winner = m2.piece.color;
                         }
                     } else {
                         m1.isDead = true;
@@ -189,7 +201,6 @@ void GameEngine::resolvePhysicsTick() {
                         notifyPieceCaptured(m2.piece);
                         if (ruleEngine.isFatalDeath(m1.piece.kind) || ruleEngine.isFatalDeath(m2.piece.kind)) {
                             currentState.isGameOver = true;
-                            // If both kings die exactly on the same millisecond, it's a draw (no winner)
                         }
                     }
                 } else {
@@ -198,10 +209,10 @@ void GameEngine::resolvePhysicsTick() {
                     } else {
                         if (m1.startTime < m2.startTime) {
                             m2.arrivalTime = now;
-                            m2.destination = m2.getCurrentCell(now - 50);
+                            m2.destination = m2.getCurrentCell(now - PHYSICS_TICK_MS);
                         } else {
                             m1.arrivalTime = now;
-                            m1.destination = m1.getCurrentCell(now - 50);
+                            m1.destination = m1.getCurrentCell(now - PHYSICS_TICK_MS);
                         }
                     }
                 }

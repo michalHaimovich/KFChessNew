@@ -31,5 +31,8 @@ public:
     void handleAutoResign();
     void cancelGracePeriod();
     
+    void handlePlayerDisconnect(websocketpp::connection_hdl hdl);
+
+
     bool checkAutoResign(); 
 };

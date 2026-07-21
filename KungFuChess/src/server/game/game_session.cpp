@@ -1,15 +1,14 @@
 #include "game_session.hpp"
 #include <iostream>
 
-constexpr long TARGET_FPS = 60;
+constexpr long TARGET_FPS = 30;
 constexpr long BROADCAST_INTERVAL_MS = 1000 / TARGET_FPS;
-
 
 void GameSession::gameLoop()
 {
     using clock = std::chrono::high_resolution_clock;
-    auto startTime = clock::now(); 
-    
+    auto startTime = clock::now();
+
     long lastEngineUpdateTime = 0;
     long lastBroadcastTime = 0;
 
@@ -19,7 +18,7 @@ void GameSession::gameLoop()
     {
         auto now = clock::now();
         long absoluteTime = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
-        
+
         long engineDt = absoluteTime - lastEngineUpdateTime;
         if (engineDt > 0)
         {
@@ -31,7 +30,7 @@ void GameSession::gameLoop()
         if (timeSinceLastBroadcast >= BROADCAST_INTERVAL_MS)
         {
             GameSnapshot snap = engine.getSnapshot();
-            
+
             snap.whitePlayerName = m_whiteName;
             snap.blackPlayerName = m_blackName;
 
@@ -42,14 +41,25 @@ void GameSession::gameLoop()
                 {
                     if (sendCallback)
                     {
-                        sendCallback(pair.first, stateStr); 
+                        sendCallback(pair.first, stateStr);
                     }
                 }
             }
-            lastBroadcastTime = absoluteTime; 
+            lastBroadcastTime = absoluteTime;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1)); 
+        auto loopEndTime = clock::now();
+        long loopDuration = std::chrono::duration_cast<std::chrono::milliseconds>(loopEndTime - now).count();
+        long sleepTime = BROADCAST_INTERVAL_MS - loopDuration;
+
+        if (sleepTime > 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleepTime));
+        }
+        else
+        {
+            std::this_thread::yield();
+        }
     }
 
     std::cout << "[GameSession] Time thread stopped." << std::endl;
@@ -60,7 +70,8 @@ GameSession::GameSession(std::function<void(websocketpp::connection_hdl, const s
 {
     engine.setEventBus(&serverBus);
 
-    serverBus.subscribe<PieceCapturedEvent>([this](const PieceCapturedEvent& e) {
+    serverBus.subscribe<PieceCapturedEvent>([this](const PieceCapturedEvent &e)
+                                            {
         json j;
         j["type"] = "PieceCapturedEvent";
         j["pieceId"] = e.capturedPiece.id;
@@ -68,10 +79,10 @@ GameSession::GameSession(std::function<void(websocketpp::connection_hdl, const s
         j["pieceKind"] = static_cast<int>(e.capturedPiece.kind);
         
         std::lock_guard<std::mutex> lock(eventsMutex);
-        pendingEvents.push_back(j);
-    });
+        pendingEvents.push_back(j); });
 
-    serverBus.subscribe<MoveCompletedEvent>([this](const MoveCompletedEvent& e) {
+    serverBus.subscribe<MoveCompletedEvent>([this](const MoveCompletedEvent &e)
+                                            {
         json j;
         j["type"] = "MoveCompletedEvent";
         j["pieceId"] = e.piece.id;
@@ -85,8 +96,7 @@ GameSession::GameSession(std::function<void(websocketpp::connection_hdl, const s
         j["timeMs"] = e.timeMs;
 
         std::lock_guard<std::mutex> lock(eventsMutex);
-        pendingEvents.push_back(j);
-    });
+        pendingEvents.push_back(j); });
 
     engine.setupStandardBoard();
     timeThread = std::thread(&GameSession::gameLoop, this);
@@ -101,7 +111,7 @@ GameSession::~GameSession()
     }
 }
 
-PlayerRole GameSession::addClient(websocketpp::connection_hdl hdl, const std::string& username)
+PlayerRole GameSession::addClient(websocketpp::connection_hdl hdl, const std::string &username)
 {
     std::lock_guard<std::mutex> lock(playersMutex);
     PlayerRole assignedRole;
@@ -117,7 +127,7 @@ PlayerRole GameSession::addClient(websocketpp::connection_hdl hdl, const std::st
     {
         assignedRole = PlayerRole::Black;
         blackTaken = true;
-        m_blackName = username; 
+        m_blackName = username;
         std::cout << "[GameSession] Client joined - Assigned as Black Player: " << username << std::endl;
     }
     else
@@ -140,13 +150,13 @@ void GameSession::removeClient(websocketpp::connection_hdl hdl)
         if (it->second == PlayerRole::White)
         {
             whiteTaken = false;
-            m_whiteName = "Waiting..."; 
+            m_whiteName = "Waiting...";
             std::cout << "[GameSession] White Player disconnected. Slot is open." << std::endl;
         }
         else if (it->second == PlayerRole::Black)
         {
             blackTaken = false;
-            m_blackName = "Waiting..."; 
+            m_blackName = "Waiting...";
             std::cout << "[GameSession] Black Player disconnected. Slot is open." << std::endl;
         }
         else
@@ -235,12 +245,14 @@ std::string GameSession::serializeSnapshot(const GameSnapshot &snap)
     return j.dump();
 }
 
-void GameSession::broadcastMessage(const std::string& msg) {
+void GameSession::broadcastMessage(const std::string &msg)
+{
     std::lock_guard<std::mutex> lock(playersMutex);
-    for (const auto& pair : players) {
-        if (sendCallback) {
+    for (const auto &pair : players)
+    {
+        if (sendCallback)
+        {
             sendCallback(pair.first, msg);
         }
     }
 }
-
