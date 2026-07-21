@@ -20,4 +20,8 @@ public:
     startY = y;
     cellSize = size;
     }
+
+    int getStartX() const { return startX; }
+    int getStartY() const { return startY; }
+    int getCellSize() const { return cellSize; }
 };

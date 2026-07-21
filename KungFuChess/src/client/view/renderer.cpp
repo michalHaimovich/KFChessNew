@@ -110,7 +110,7 @@ void Renderer::drawStationaryPieces(const GameSnapshot &snapshot, long currentTi
 
         try
         {
-            const_cast<Img &>(frame).draw_on(windowBuffer, pixelX, pixelY);
+            const_cast<Img &>(frame).draw_resized_on(windowBuffer, pixelX, pixelY, layout.getCellSize(), layout.getCellSize());
         }
         catch (...)
         {
@@ -165,7 +165,7 @@ void Renderer::drawActiveMotions(const GameSnapshot &snapshot, long currentTime,
 
         try
         {
-            const_cast<Img &>(frame).draw_on(windowBuffer, currentX, currentY);
+            const_cast<Img &>(frame).draw_resized_on(windowBuffer, currentX, currentY, layout.getCellSize(), layout.getCellSize());
         }
         catch (...)
         {
@@ -177,29 +177,28 @@ void Renderer::drawUIBackground()
 {
 }
 
-void Renderer::drawSidePanels(const GameSnapshot &snapshot)
-{
+void Renderer::drawSidePanels(const GameSnapshot &snapshot) {
     cv::Mat &canvas = const_cast<cv::Mat &>(windowBuffer.get_mat());
-    if (canvas.empty())
-        return;
+    if (canvas.empty()) return;
 
     auto [boardX, boardY] = layout.getBoardStartPos();
-    int cellSize = layout.getCellSize();
-    int boardWidth = cellSize * 8;
+    int boardWidth = layout.getCellSize() * 8;
+
+    int leftSpace = boardX; 
+    int tableW = std::min(220, leftSpace - 20);
+    if (tableW < 60) tableW = 60;
+    int tableH = std::min(380, getWindowHeight() - boardY - 20);
+    
+    int leftTableX = boardX - tableW - 10;
+    int rightTableX = boardX + boardWidth + 10;
+    int tableY = boardY + 20;
 
     std::string blackScoreStr = snapshot.blackPlayerName + " (Black): " + std::to_string(scoreManager->getBlackScore());
     std::string whiteScoreStr = snapshot.whitePlayerName + " (White): " + std::to_string(scoreManager->getWhiteScore());
 
-    windowBuffer.put_text(blackScoreStr, boardX + (boardWidth / 2) - 40, boardY - 45, 0.6, cv::Scalar(20, 20, 20), 2);
-
-    windowBuffer.put_text(whiteScoreStr, boardX + (boardWidth / 2) - 40, boardY + boardWidth + 45, 0.6, cv::Scalar(20, 20, 20), 2);
-
-    int tableW = 220;
-    int tableH = 380;
-    int tableY = boardY + 20;
-
-    int leftTableX = boardX - tableW - 40;
-    int rightTableX = boardX + boardWidth + 40;
+    double fontScale = std::max(0.4, std::min(0.6, tableW / 200.0));
+    windowBuffer.put_text(blackScoreStr, leftTableX, boardY - 15, fontScale, cv::Scalar(20, 20, 20), 2);
+    windowBuffer.put_text(whiteScoreStr, rightTableX, boardY - 15, fontScale, cv::Scalar(20, 20, 20), 2);
 
     drawMoveTable("Black Actions", leftTableX, tableY, tableW, tableH, historyManager->getBlackMoves());
     drawMoveTable("White Actions", rightTableX, tableY, tableW, tableH, historyManager->getWhiteMoves());
@@ -239,10 +238,6 @@ void Renderer::drawMoveTable(const std::string &title, int x, int y, int w, int 
         rowY += 24;
     }
 }
-
-// ==========================================
-// NEW UI ELEMENTS
-// ==========================================
 
 void Renderer::drawHighlights(const GameSnapshot &snapshot)
 {
@@ -371,6 +366,19 @@ void Renderer::drawGameOverOverlay(const GameSnapshot &snapshot)
 
     cv::putText(canvas, text, cv::Point(textX, textY), fontFace, fontScale, outlineColor, thickness + 3, cv::LINE_AA);
     cv::putText(canvas, text, cv::Point(textX, textY), fontFace, fontScale, textColor, thickness, cv::LINE_AA);
+
+    int btnW = 200, btnH = 50;
+    int btnX = boardX + (boardW - btnW) / 2;
+    int btnY = boardY + (boardH) / 2 + 60;
+    
+    cv::rectangle(canvas, cv::Rect(btnX, btnY, btnW, btnH), cv::Scalar(220, 220, 220), cv::FILLED);
+    cv::rectangle(canvas, cv::Rect(btnX, btnY, btnW, btnH), cv::Scalar(0, 0, 0), 2);
+    
+    baseline = 0;
+    cv::Size btnTextSize = cv::getTextSize("Return to Lobby", cv::FONT_HERSHEY_DUPLEX, 0.6, 1, &baseline);
+    cv::putText(canvas, "Return to Lobby", 
+                cv::Point(btnX + (btnW - btnTextSize.width) / 2, btnY + (btnH + btnTextSize.height) / 2), 
+                cv::FONT_HERSHEY_DUPLEX, 0.6, cv::Scalar(0, 0, 0), 1, cv::LINE_AA);
 }
 
 void Renderer::updateWindowSize(int w, int h)

@@ -10,22 +10,30 @@ enum class ControllerResult {
     PieceSelected,
     SelectionCleared,
     MoveRequested,
-    JumpRequested
+    JumpRequested,
+    ReturnToLobby
 };
 
 class Controller {
 private:
     NetworkClient& network;
+   
     const GameSnapshot& localSnapshot;
+   
     std::optional<Position> selectedCell;
-    BoardMapper mapper;
+    
+    BoardMapper& mapper;
+
+    bool wantsReturn = false;
 
 public:
-    Controller(NetworkClient& net, const GameSnapshot& snapshot, const BoardMapper& map);
+    Controller(NetworkClient& net, const GameSnapshot& snapshot, BoardMapper& map);
     
     ControllerResult click(int x, int y);
     ControllerResult jump(int x, int y);
     std::optional<Position> getSelectedCell() const;
+
+    bool shouldReturnToLobby() const { return wantsReturn; }
 
     
 };

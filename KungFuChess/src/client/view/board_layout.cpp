@@ -11,24 +11,21 @@ BoardLayout::BoardLayout(int winWidth, int winHeight, int rows, int cols,
 }
 
 void BoardLayout::calculateLayout() {
-    // 1. Calculate the available space for the board after subtracting UI margins
-    int availableWidth = windowWidth - marginLeft - marginRight;
-    int availableHeight = windowHeight - marginTop - marginBottom;
+    int curMarginLeft = std::min(marginLeft, windowWidth / 4);
+    int curMarginRight = std::min(marginRight, windowWidth / 4);
+    int curMarginTop = std::min(marginTop, windowHeight / 8);
+    int curMarginBottom = std::min(marginBottom, windowHeight / 8);
 
-    // 2. Determine the maximum possible cell size that fits the available space
-    int cellWidth = availableWidth / logicalCols;
-    int cellHeight = availableHeight / logicalRows;
+    int availableWidth = std::max(10, windowWidth - curMarginLeft - curMarginRight);
+    int availableHeight = std::max(10, windowHeight - curMarginTop - curMarginBottom);
+
+    cellSizePixels = std::min(availableWidth / logicalCols, availableHeight / logicalRows);
     
-    // We must keep the cells perfectly square, so we take the smaller of the two
-    cellSizePixels = std::min(cellWidth, cellHeight);
-
-    // 3. Calculate the actual starting position of the board to keep it centered 
-    // within the available space (in case the available space is not a perfect square)
     int actualBoardWidth = cellSizePixels * logicalCols;
     int actualBoardHeight = cellSizePixels * logicalRows;
 
-    boardStartX = marginLeft + (availableWidth - actualBoardWidth) / 2;
-    boardStartY = marginTop + (availableHeight - actualBoardHeight) / 2;
+    boardStartX = curMarginLeft + (availableWidth - actualBoardWidth) / 2;
+    boardStartY = curMarginTop + (availableHeight - actualBoardHeight) / 2;
 }
 
 void BoardLayout::updateWindowSize(int newWidth, int newHeight) {

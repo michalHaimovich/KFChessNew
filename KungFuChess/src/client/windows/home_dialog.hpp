@@ -51,6 +51,15 @@ public:
         int yPos = (GetSystemMetrics(SM_CYSCREEN) - (rc.bottom - rc.top)) / 2;
         SetWindowPos(hwnd, 0, xPos, yPos, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
 
+
+        HFONT hFont = CreateFontA(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 
+                                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, 
+                                  DEFAULT_PITCH | FF_SWISS, "Segoe UI");
+        EnumChildWindows(hwnd, [](HWND hChild, LPARAM lParam) -> BOOL {
+            SendMessageA(hChild, WM_SETFONT, lParam, TRUE);
+            return TRUE;
+        }, (LPARAM)hFont);
+        
         ShowWindow(hwnd, SW_SHOW);
         UpdateWindow(hwnd);
 

@@ -59,7 +59,10 @@ public:
      * Check if image is loaded
      */
     bool is_loaded() const { return !img.empty(); }
+    
+    void draw_resized_on(Img& other_img, int x, int y, int target_w, int target_h);
 
 private:
     cv::Mat img;
+
 }; 

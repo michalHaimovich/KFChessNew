@@ -99,3 +99,35 @@ void Img::show() {
     cv::waitKey(0);
     cv::destroyAllWindows();
 } 
+
+void Img::draw_resized_on(Img& other_img, int x, int y, int w, int h) {
+    if (img.empty() || other_img.img.empty()) return;
+
+    cv::Mat resized_src;
+    cv::resize(img, resized_src, cv::Size(w, h), 0, 0, cv::INTER_AREA);
+    
+    cv::Mat target_img = other_img.img;
+    int H = target_img.rows, W = target_img.cols;
+    
+    if (x < 0 || y < 0 || x + w > W || y + h > H) return; 
+
+    cv::Mat roi = target_img(cv::Rect(x, y, w, h));
+    
+    if (resized_src.channels() == 4 && target_img.channels() >= 3) {
+        for (int r = 0; r < h; ++r) {
+            for (int c = 0; c < w; ++c) {
+                double alpha = resized_src.at<cv::Vec4b>(r, c)[3] / 255.0;
+                if (alpha == 0) continue; 
+                
+                cv::Vec3b& dst_pixel = roi.at<cv::Vec3b>(r, c);
+                cv::Vec4b src_pixel = resized_src.at<cv::Vec4b>(r, c);
+                
+                dst_pixel[0] = (1.0 - alpha) * dst_pixel[0] + alpha * src_pixel[0];
+                dst_pixel[1] = (1.0 - alpha) * dst_pixel[1] + alpha * src_pixel[1];
+                dst_pixel[2] = (1.0 - alpha) * dst_pixel[2] + alpha * src_pixel[2];
+            }
+        }
+    } else {
+        resized_src.copyTo(roi);
+    }
+}

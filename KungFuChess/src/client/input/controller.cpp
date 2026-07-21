@@ -2,7 +2,7 @@
 #include <cmath>
 #include <algorithm>
 
-Controller::Controller(NetworkClient& net, const GameSnapshot& snapshot, const BoardMapper& map) 
+Controller::Controller(NetworkClient& net, const GameSnapshot& snapshot, BoardMapper& map) 
     : network(net), localSnapshot(snapshot), mapper(map), selectedCell(std::nullopt) {}
     
 std::optional<Position> Controller::getSelectedCell() const {
@@ -10,6 +10,20 @@ std::optional<Position> Controller::getSelectedCell() const {
 }
 
 ControllerResult Controller::click(int x, int y) {
+
+    if (localSnapshot.isGameOver) {
+        int btnW = 200, btnH = 50;
+        int boardW = mapper.getCellSize() * 8;
+        int btnX = mapper.getStartX() + (boardW - btnW) / 2;
+        int btnY = mapper.getStartY() + (boardW) / 2 + 60;
+        
+        if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
+            wantsReturn = true;
+            return ControllerResult::ReturnToLobby;
+        }
+        return ControllerResult::Ignored;
+    }
+
     auto mappedCellOpt = mapper.pixelToCell(x, y); 
 
     if (!mappedCellOpt.has_value()) {

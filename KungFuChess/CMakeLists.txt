@@ -1,10 +1,11 @@
 ﻿cmake_minimum_required(VERSION 3.15)
 project(KungFuChess C CXX)
 add_definitions(-DASIO_STANDALONE -D_WEBSOCKETPP_CPP11_STL_ -DASIO_ENABLE_OLD_SERVICES)
-
 # Use C++17 standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFESTUAC:\"level='asInvoker' uiAccess='false'\"")
 
 # ==========================================
 # 0. Third-Party Libraries (WebSockets & ASIO & JSON)
@@ -46,7 +47,6 @@ add_library(kungfu_server_core
    # src/server/texttests/script_runner.cpp
     src/server/network/network_server.cpp 
     src/server/game/game_session.cpp
-    src/server/game/server_controller.cpp
     src/server/game/room.cpp         
     src/server/game/room_manager.cpp
     third_party/sqlite/sqlite3.c
