@@ -1,7 +1,8 @@
 #include "room_manager.hpp"
 
-RoomManager::RoomManager(std::function<void(websocketpp::connection_hdl, const std::string&)> sendCb)
-    : m_sendCallback(sendCb) {}
+RoomManager::RoomManager(std::function<void(websocketpp::connection_hdl, const std::string&)> sendCb, UserRepository& repo)
+    : m_sendCallback(sendCb), m_userRepo(repo) {}
+
 
 bool RoomManager::createRoom(const std::string& roomName) {
     std::lock_guard<std::mutex> lock(m_managerMutex);
@@ -10,7 +11,7 @@ bool RoomManager::createRoom(const std::string& roomName) {
         return false; 
     }
     
-    m_rooms[roomName] = std::make_shared<Room>(roomName, m_sendCallback);
+    m_rooms[roomName] = std::make_shared<Room>(roomName, m_sendCallback, m_userRepo);
     return true;
 }
 

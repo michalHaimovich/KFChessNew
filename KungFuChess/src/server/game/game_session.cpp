@@ -1,8 +1,13 @@
 #include "game_session.hpp"
+#include <cmath>
 #include <iostream>
 
-constexpr long TARGET_FPS = 30;
-constexpr long BROADCAST_INTERVAL_MS = 1000 / TARGET_FPS;
+namespace
+{
+    constexpr long TARGET_FPS = 30;
+    constexpr long BROADCAST_INTERVAL_MS = 1000 / TARGET_FPS;
+    int kFactor = 32;
+}
 
 void GameSession::gameLoop()
 {
@@ -30,6 +35,22 @@ void GameSession::gameLoop()
         if (timeSinceLastBroadcast >= BROADCAST_INTERVAL_MS)
         {
             GameSnapshot snap = engine.getSnapshot();
+
+            if (snap.isGameOver && !eloUpdated)
+            {
+                std::cout << "\n[DEBUG ELO] Game Over detected by engine!" << std::endl;
+                std::cout << "[DEBUG ELO] Does winner have value? " << (snap.winner.has_value() ? "YES" : "NO") << std::endl;
+
+                if (snap.winner.has_value())
+                {
+                    processGameOver(snap);
+                    eloUpdated = true;
+                }
+                else
+                {
+                    std::cout << "[DEBUG ELO] WARNING: Game is over but no winner is set in snapshot!" << std::endl;
+                }
+            }
 
             snap.whitePlayerName = m_whiteName;
             snap.blackPlayerName = m_blackName;
@@ -65,8 +86,58 @@ void GameSession::gameLoop()
     std::cout << "[GameSession] Time thread stopped." << std::endl;
 }
 
-GameSession::GameSession(std::function<void(websocketpp::connection_hdl, const std::string &)> sendCb)
-    : engine(8, 8), whiteTaken(false), blackTaken(false), isRunning(true), sendCallback(sendCb)
+void GameSession::processGameOver(const GameSnapshot& snap)
+{
+    std::cout << "[DEBUG ELO] Starting ELO process for White: '" << m_whiteName << "' vs Black: '" << m_blackName << "'" << std::endl;
+
+    auto whiteUser = userRepo.getByUsername(m_whiteName);
+    auto blackUser = userRepo.getByUsername(m_blackName);
+
+    if (!whiteUser) {
+        std::cerr << "[DEBUG ELO] ERROR: Could not find White user '" << m_whiteName << "' in DB!" << std::endl;
+        return; 
+    }
+    if (!blackUser) {
+        std::cerr << "[DEBUG ELO] ERROR: Could not find Black user '" << m_blackName << "' in DB!" << std::endl;
+        return; 
+    }
+
+    int currentWhiteElo = whiteUser->rating;
+    int currentBlackElo = blackUser->rating;
+    std::cout << "[DEBUG ELO] Fetched Current Ratings -> White: " << currentWhiteElo << ", Black: " << currentBlackElo << std::endl;
+
+    float expectedWhite = 1.0f / (1.0f + std::pow(10.0f, (currentBlackElo - currentWhiteElo) / 400.0f));
+    float expectedBlack = 1.0f - expectedWhite;
+
+    float scoreWhite = (snap.winner.value() == PieceColor::White) ? 1.0f : 0.0f;
+    float scoreBlack = 1.0f - scoreWhite;
+    
+    std::cout << "[DEBUG ELO] Winner is: " << ((scoreWhite == 1.0f) ? "White" : "Black") << std::endl;
+
+    int kFactor = 32;
+    int newWhiteElo = currentWhiteElo + static_cast<int>(kFactor * (scoreWhite - expectedWhite));
+    int newBlackElo = currentBlackElo + static_cast<int>(kFactor * (scoreBlack - expectedBlack));
+
+    std::cout << "[DEBUG ELO] Calculated New Ratings -> White: " << newWhiteElo << ", Black: " << newBlackElo << std::endl;
+
+    // ניסיון לעדכן את המסד ושמירת התוצאה (האם הצליח או נכשל)
+    bool whiteSuccess = userRepo.updateRating(m_whiteName, newWhiteElo);
+    bool blackSuccess = userRepo.updateRating(m_blackName, newBlackElo);
+
+    if (!whiteSuccess) {
+        std::cerr << "[DEBUG ELO] DATABASE ERROR: Failed to update rating for White user!" << std::endl;
+    }
+    if (!blackSuccess) {
+        std::cerr << "[DEBUG ELO] DATABASE ERROR: Failed to update rating for Black user!" << std::endl;
+    }
+    
+    if (whiteSuccess && blackSuccess) {
+        std::cout << "[DEBUG ELO] SUCCESS: Database completely updated!" << std::endl;
+    }
+}
+
+GameSession::GameSession(std::function<void(websocketpp::connection_hdl, const std::string &)> sendCb, UserRepository &repo)
+    : engine(8, 8), whiteTaken(false), blackTaken(false), isRunning(true), sendCallback(sendCb), userRepo(repo)
 {
     engine.setEventBus(&serverBus);
 

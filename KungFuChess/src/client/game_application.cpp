@@ -319,24 +319,28 @@ bool GameApplication::performLogin(std::string &outUsername)
 }
 
 void GameApplication::run() {
+    std::string username;
+    
+    if (!performLogin(username)) {
+        return; 
+    }
+
     while (true) {
-        loginStatus = 0;
+        loginStatus = 0; 
         roomStatus = 0;
         timeOffset = 0;
 
-        std::string username;
-        
-        if (!performLogin(username)) {
-            break; 
-        }
-
         if (!joinRoom(username)) {
-            network.disconnect();
-            continue; 
+            break; 
         }
 
         runGameLoop(username);
         
-        network.disconnect();
+        nlohmann::json leaveMsg;
+        leaveMsg["action"] = "LEAVE_ROOM";
+        network.send(leaveMsg.dump());
     }
+    
+    network.disconnect();
 }
+

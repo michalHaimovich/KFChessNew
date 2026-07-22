@@ -5,6 +5,7 @@
 #include <websocketpp/common/connection_hdl.hpp>
 
 #include "game_session.hpp" 
+#include "../db/repositories/user_repository.hpp"
 
 class Room {
 private:
@@ -19,7 +20,7 @@ private:
     websocketpp::connection_hdl m_disconnectedPlayer;
 
 public:
-    Room(const std::string& name, std::function<void(websocketpp::connection_hdl, const std::string&)> sendCb);
+    Room(const std::string& name, std::function<void(websocketpp::connection_hdl, const std::string&)> sendCb, UserRepository& repo);
     ~Room() = default;
 
     std::string getName() const;
@@ -32,7 +33,6 @@ public:
     void cancelGracePeriod();
     
     void handlePlayerDisconnect(websocketpp::connection_hdl hdl);
-
 
     bool checkAutoResign(); 
 };

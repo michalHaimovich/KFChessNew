@@ -8,16 +8,16 @@ namespace
     constexpr int MAX_ELO_DIFFERENCE = 100;
     constexpr int MATCHMAKING_TIMEOUT_SEC = 60;
 }
-
 NetworkServer::NetworkServer()
 {
-    m_roomManager = std::make_unique<RoomManager>(
-        [this](websocketpp::connection_hdl hdl, const std::string &msg)
-        { this->sendToClient(hdl, msg); });
-
     m_db = std::make_unique<DatabaseConnection>("kungfu_chess.db");
     m_userRepo = std::make_unique<UserRepository>(*m_db);
     m_userRepo->initializeTable();
+
+    m_roomManager = std::make_unique<RoomManager>(
+        [this](websocketpp::connection_hdl hdl, const std::string &msg)
+        { this->sendToClient(hdl, msg); },
+        *m_userRepo);
 
     m_matchmaker = std::make_unique<Matchmaker>(
         MAX_ELO_DIFFERENCE,
@@ -29,6 +29,9 @@ NetworkServer::NetworkServer()
 
     m_authHandler = std::make_unique<AuthHandler>(*m_userRepo);
     m_lobbyHandler = std::make_unique<LobbyHandler>(*m_roomManager, *m_matchmaker);
+
+    m_server.clear_access_channels(websocketpp::log::alevel::all);
+
     m_server.init_asio();
     m_server.set_open_handler(bind(&NetworkServer::on_open, this, std::placeholders::_1));
     m_server.set_close_handler(bind(&NetworkServer::on_close, this, std::placeholders::_1));
@@ -136,6 +139,26 @@ void NetworkServer::on_message(websocketpp::connection_hdl hdl, server::message_
 
         case ClientState::IN_ROOM:
         {
+            if (payload.empty())
+                break;
+
+            // check if json
+            if (payload[0] == '{')
+            {
+                auto jOpt = parseJsonSafe(payload);
+                if (jOpt.has_value() && jOpt.value().value("action", "") == "LEAVE_ROOM")
+                {
+                    auto room = m_roomManager->getRoom(client.roomId);
+                    if (room)
+                    {
+                        room->removePlayer(hdl);
+                    }
+                    client.roomId = "";
+                    client.state = ClientState::LOBBY;
+                }
+                break;
+            }
+
             auto room = m_roomManager->getRoom(client.roomId);
             if (room)
             {

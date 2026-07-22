@@ -1,9 +1,11 @@
 ﻿#pragma once
 #include <optional>
+
 #include "model/position.hpp"
 #include "model/game_snapshot.hpp" 
 #include "network/network_client.hpp"
 #include "input/board_mapper.hpp"
+#include "view/theme.hpp"
 
 enum class ControllerResult {
     Ignored,

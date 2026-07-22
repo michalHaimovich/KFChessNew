@@ -13,6 +13,7 @@
 
 #include "model/event_bus.hpp"
 #include "engine/game_engine.hpp"
+#include "../db/repositories/user_repository.hpp"
 
 using json = nlohmann::json;
 
@@ -48,20 +49,24 @@ private:
     mutable std::mutex eventsMutex;
 
     void gameLoop();
+    
+    void processGameOver(const GameSnapshot& snap);
+
+    UserRepository& userRepo; 
+    bool eloUpdated = false;
 
     // Helper function to serialize the snapshot into JSON string
     std::string serializeSnapshot(const GameSnapshot &snap);
 
 public:
-    GameSession(std::function<void(websocketpp::connection_hdl, const std::string &)> sendCb);
-
+    GameSession(std::function<void(websocketpp::connection_hdl, const std::string &)> sendCb, UserRepository &repo);
     ~GameSession();
 
     PlayerRole addClient(websocketpp::connection_hdl hdl, const std::string &username);
     void removeClient(websocketpp::connection_hdl hdl);
     PlayerRole getRole(websocketpp::connection_hdl hdl) const;
 
-    void broadcastMessage(const std::string& msg);
+    void broadcastMessage(const std::string &msg);
 
     GameEngine &getEngine();
 };

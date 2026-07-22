@@ -1,8 +1,11 @@
 #include "room.hpp"
 
-Room::Room(const std::string& name, std::function<void(websocketpp::connection_hdl, const std::string&)> sendCb)
+#include "room.hpp"
+
+
+Room::Room(const std::string& name, std::function<void(websocketpp::connection_hdl, const std::string&)> sendCb, UserRepository& repo)
     : m_roomName(name), 
-      m_gameSession(std::make_shared<GameSession>(sendCb)),
+      m_gameSession(std::make_shared<GameSession>(sendCb, repo)), 
       m_isGracePeriodActive(false) {}
 
 std::string Room::getName() const {
