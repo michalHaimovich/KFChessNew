@@ -37,8 +37,8 @@ private:
     std::string m_whiteName = "Waiting...";
     std::string m_blackName = "Waiting...";
 
-    std::thread timeThread;
-    std::atomic<bool> isRunning;
+    long lastEngineUpdateTime = 0;
+    long lastBroadcastTime = 0;
 
     std::function<void(websocketpp::connection_hdl, const std::string &)> sendCallback;
 
@@ -48,8 +48,6 @@ private:
     std::vector<json> pendingEvents;
     mutable std::mutex eventsMutex;
 
-    void gameLoop();
-    
     void processGameOver(const GameSnapshot& snap);
 
     UserRepository& userRepo; 
@@ -69,4 +67,6 @@ public:
     void broadcastMessage(const std::string &msg);
 
     GameEngine &getEngine();
+
+    void update(long absoluteTime);
 };

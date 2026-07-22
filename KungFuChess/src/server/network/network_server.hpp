@@ -31,8 +31,6 @@ private:
     std::unique_ptr<DatabaseConnection> m_db;
     std::unique_ptr<UserRepository> m_userRepo;
 
-    std::optional<json> parseJsonSafe(const std::string& payload);
-
     std::unique_ptr<Matchmaker> m_matchmaker;
     std::unique_ptr<AuthHandler> m_authHandler;
     std::unique_ptr<LobbyHandler> m_lobbyHandler;
@@ -40,6 +38,8 @@ private:
     void start_timer();
 
     void sendToClient(websocketpp::connection_hdl hdl, const std::string& message);
+
+    std::optional<json> parseJsonSafe(const std::string& payload);
 
     void onMatchFound(websocketpp::connection_hdl hdl1, websocketpp::connection_hdl hdl2);
     void onMatchTimeout(websocketpp::connection_hdl hdl);

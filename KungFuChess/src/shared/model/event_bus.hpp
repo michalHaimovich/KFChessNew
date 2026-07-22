@@ -4,6 +4,7 @@
 #include <functional>
 #include <typeindex>
 #include <memory>
+
 #include "events.hpp"
 
 class EventBus {
@@ -33,3 +34,4 @@ public:
         }
     }
 };
+

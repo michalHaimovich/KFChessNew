@@ -9,82 +9,48 @@ namespace
     int kFactor = 32;
 }
 
-void GameSession::gameLoop()
+void GameSession::update(long absoluteTime)
 {
-    using clock = std::chrono::high_resolution_clock;
-    auto startTime = clock::now();
-
-    long lastEngineUpdateTime = 0;
-    long lastBroadcastTime = 0;
-
-    std::cout << "[GameSession] Time thread started." << std::endl;
-
-    while (isRunning)
+    // 1. קידום מנוע המשחק
+    long engineDt = absoluteTime - lastEngineUpdateTime;
+    if (engineDt > 0)
     {
-        auto now = clock::now();
-        long absoluteTime = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
-
-        long engineDt = absoluteTime - lastEngineUpdateTime;
-        if (engineDt > 0)
-        {
-            engine.wait(engineDt);
-            lastEngineUpdateTime = absoluteTime;
-        }
-
-        long timeSinceLastBroadcast = absoluteTime - lastBroadcastTime;
-        if (timeSinceLastBroadcast >= BROADCAST_INTERVAL_MS)
-        {
-            GameSnapshot snap = engine.getSnapshot();
-
-            if (snap.isGameOver && !eloUpdated)
-            {
-                std::cout << "\n[DEBUG ELO] Game Over detected by engine!" << std::endl;
-                std::cout << "[DEBUG ELO] Does winner have value? " << (snap.winner.has_value() ? "YES" : "NO") << std::endl;
-
-                if (snap.winner.has_value())
-                {
-                    processGameOver(snap);
-                    eloUpdated = true;
-                }
-                else
-                {
-                    std::cout << "[DEBUG ELO] WARNING: Game is over but no winner is set in snapshot!" << std::endl;
-                }
-            }
-
-            snap.whitePlayerName = m_whiteName;
-            snap.blackPlayerName = m_blackName;
-
-            std::string stateStr = serializeSnapshot(snap);
-            {
-                std::lock_guard<std::mutex> lock(playersMutex);
-                for (const auto &pair : players)
-                {
-                    if (sendCallback)
-                    {
-                        sendCallback(pair.first, stateStr);
-                    }
-                }
-            }
-            lastBroadcastTime = absoluteTime;
-        }
-
-        auto loopEndTime = clock::now();
-        long loopDuration = std::chrono::duration_cast<std::chrono::milliseconds>(loopEndTime - now).count();
-        long sleepTime = BROADCAST_INTERVAL_MS - loopDuration;
-
-        if (sleepTime > 0)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(sleepTime));
-        }
-        else
-        {
-            std::this_thread::yield();
-        }
+        engine.wait(engineDt);
+        lastEngineUpdateTime = absoluteTime;
     }
 
-    std::cout << "[GameSession] Time thread stopped." << std::endl;
-}
+    // 2. שידור המצב ללקוחות 
+    long timeSinceLastBroadcast = absoluteTime - lastBroadcastTime;
+    if (timeSinceLastBroadcast >= BROADCAST_INTERVAL_MS)
+    {
+        GameSnapshot snap = engine.getSnapshot();
+
+        if (snap.isGameOver && !eloUpdated)
+        {
+            if (snap.winner.has_value())
+            {
+                processGameOver(snap);
+                eloUpdated = true;
+            }
+        }
+
+        snap.whitePlayerName = m_whiteName;
+        snap.blackPlayerName = m_blackName;
+
+        std::string stateStr = serializeSnapshot(snap);
+        {
+            std::lock_guard<std::mutex> lock(playersMutex);
+            for (const auto &pair : players)
+            {
+                if (sendCallback)
+                {
+                    sendCallback(pair.first, stateStr);
+                }
+            }
+        }
+        lastBroadcastTime = absoluteTime;
+    }
+}   
 
 void GameSession::processGameOver(const GameSnapshot& snap)
 {
@@ -137,7 +103,7 @@ void GameSession::processGameOver(const GameSnapshot& snap)
 }
 
 GameSession::GameSession(std::function<void(websocketpp::connection_hdl, const std::string &)> sendCb, UserRepository &repo)
-    : engine(8, 8), whiteTaken(false), blackTaken(false), isRunning(true), sendCallback(sendCb), userRepo(repo)
+    : engine(8, 8), whiteTaken(false), blackTaken(false), sendCallback(sendCb), userRepo(repo)
 {
     engine.setEventBus(&serverBus);
 
@@ -170,16 +136,10 @@ GameSession::GameSession(std::function<void(websocketpp::connection_hdl, const s
         pendingEvents.push_back(j); });
 
     engine.setupStandardBoard();
-    timeThread = std::thread(&GameSession::gameLoop, this);
 }
 
 GameSession::~GameSession()
 {
-    isRunning = false;
-    if (timeThread.joinable())
-    {
-        timeThread.join();
-    }
 }
 
 PlayerRole GameSession::addClient(websocketpp::connection_hdl hdl, const std::string &username)

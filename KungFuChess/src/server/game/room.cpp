@@ -67,3 +67,9 @@ void Room::handlePlayerDisconnect(websocketpp::connection_hdl hdl) {
     }
 }
 
+void Room::update(long absoluteTime) {
+    if (m_gameSession) {
+        m_gameSession->update(absoluteTime);
+    }
+}
+

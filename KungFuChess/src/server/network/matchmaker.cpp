@@ -24,54 +24,44 @@ void Matchmaker::removePlayer(websocketpp::connection_hdl hdl) {
 
 void Matchmaker::processQueue() {
     auto now = std::chrono::steady_clock::now();
-    std::vector<websocketpp::connection_hdl> matchedPlayers;
-    std::vector<websocketpp::connection_hdl> timeoutPlayers;
+    
+    m_timeoutCache.clear();
+    m_waitingCache.clear();
 
-    // 1. Check for timeouts
-    for (const auto& pair : m_queue) {
-        auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - pair.second.entryTime).count();
+    for (auto it = m_queue.begin(); it != m_queue.end(); ++it) {
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.entryTime).count();
         if (duration >= m_timeoutSeconds) {
-            timeoutPlayers.push_back(pair.first);
+            m_timeoutCache.push_back(it->first);
+        } else {
+            m_waitingCache.push_back(it->second);
         }
     }
 
-    // Process timeouts (remove from queue and notify)
-    for (auto hdl : timeoutPlayers) {
+    for (auto hdl : m_timeoutCache) {
         removePlayer(hdl);
         if (m_onTimeout) m_onTimeout(hdl);
     }
 
-    // 2. Find matches
-    // Create a vector of remaining players for easier iteration
-    std::vector<QueuedPlayer> waitingPlayers;
-    for (const auto& pair : m_queue) {
-        waitingPlayers.push_back(pair.second);
-    }
+    if (m_waitingCache.size() < 2) return;
 
-    // Find valid pairs
-    for (size_t i = 0; i < waitingPlayers.size(); ++i) {
-        // Skip if this player was already matched in this loop
-        if (m_queue.find(waitingPlayers[i].hdl) == m_queue.end()) continue;
+    std::sort(m_waitingCache.begin(), m_waitingCache.end(), [](const QueuedPlayer& a, const QueuedPlayer& b) {
+        return a.rating < b.rating;
+    });
 
-        for (size_t j = i + 1; j < waitingPlayers.size(); ++j) {
-            // Skip if the second player was already matched
-            if (m_queue.find(waitingPlayers[j].hdl) == m_queue.end()) continue;
+    for (size_t i = 0; i + 1 < m_waitingCache.size(); ++i) {
+        
+        int eloDiff = m_waitingCache[i+1].rating - m_waitingCache[i].rating;
+        
+        if (eloDiff <= m_maxEloDifference) {
+            auto hdl1 = m_waitingCache[i].hdl;
+            auto hdl2 = m_waitingCache[i+1].hdl;
 
-            int eloDiff = std::abs(waitingPlayers[i].rating - waitingPlayers[j].rating);
-            if (eloDiff <= m_maxEloDifference) {
-                // Match found! 
-                auto hdl1 = waitingPlayers[i].hdl;
-                auto hdl2 = waitingPlayers[j].hdl;
+            removePlayer(hdl1);
+            removePlayer(hdl2);
 
-                // Remove both from queue
-                removePlayer(hdl1);
-                removePlayer(hdl2);
+            if (m_onMatchFound) m_onMatchFound(hdl1, hdl2);
 
-                // Notify server to create the room
-                if (m_onMatchFound) m_onMatchFound(hdl1, hdl2);
-                
-                break; // Player 'i' is matched, move to the next 'i'
-            }
+            ++i; 
         }
     }
 }

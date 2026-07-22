@@ -23,6 +23,8 @@ public:
     Room(const std::string& name, std::function<void(websocketpp::connection_hdl, const std::string&)> sendCb, UserRepository& repo);
     ~Room() = default;
 
+    void update(long absoluteTime);
+
     std::string getName() const;
     std::shared_ptr<GameSession> getSession();
     PlayerRole addPlayer(websocketpp::connection_hdl hdl,  const std::string& username);

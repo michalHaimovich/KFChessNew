@@ -8,6 +8,7 @@ namespace
     constexpr int MAX_ELO_DIFFERENCE = 100;
     constexpr int MATCHMAKING_TIMEOUT_SEC = 60;
 }
+
 NetworkServer::NetworkServer()
 {
     m_db = std::make_unique<DatabaseConnection>("kungfu_chess.db");
